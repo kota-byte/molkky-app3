@@ -1,2 +1,5 @@
 streamlit-drawable-canvas
 pandas
+sqlalchemy
+psycopg2-binary
+altair

@@ -1,28 +1,33 @@
 import streamlit as st
-import sqlite3
 import pandas as pd
 from datetime import datetime
+from sqlalchemy import text
 from streamlit_drawable_canvas import st_canvas
 import streamlit.components.v1 as components
 
 st.set_page_config(page_title="モルック戦術支援アプリ", layout="centered")
 
+db_conn = st.connection("sql", type="sql")
+
 # --- 1. データベース準備 ---
 def init_db():
-    conn = sqlite3.connect('molkky.db')
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS throw_logs
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  dist REAL, target_no INTEGER, is_success INTEGER,
-                  timestamp TEXT)''')
-    obstacle_cols = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw']
-    for col in obstacle_cols:
-        try:
-            c.execute(f"ALTER TABLE throw_logs ADD COLUMN {col} INTEGER DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass
-    conn.commit()
-    conn.close()
+    with db_conn.session as s:
+        s.execute(text('''CREATE TABLE IF NOT EXISTS throw_logs
+                     (id SERIAL PRIMARY KEY,
+                      dist REAL, target_no INTEGER, is_success INTEGER,
+                      timestamp TEXT)'''))
+        s.execute(text('''CREATE TABLE IF NOT EXISTS players
+                     (id SERIAL PRIMARY KEY,
+                      name TEXT UNIQUE)'''))
+        obstacle_cols = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw']
+        for col in obstacle_cols:
+            s.execute(text(f"ALTER TABLE throw_logs ADD COLUMN IF NOT EXISTS {col} INTEGER DEFAULT 0"))
+        s.execute(text("ALTER TABLE throw_logs ADD COLUMN IF NOT EXISTS player TEXT"))
+
+        # 導入前の既存データ（プレイヤー未設定）は kota のデータとして移行
+        s.execute(text("INSERT INTO players (name) VALUES ('kota') ON CONFLICT (name) DO NOTHING"))
+        s.execute(text("UPDATE throw_logs SET player = 'kota' WHERE player IS NULL"))
+        s.commit()
 
 init_db()
 
@@ -275,8 +280,6 @@ def run_simulation(
 
             ms = my_score
             mm = my_miss
-            os_ = opp_score
-            om = opp_miss
 
             # 自分の1投目
             my_rate = get_rate_for(target_num, sim_coords)
@@ -390,9 +393,54 @@ def run_simulation(
 
     return results
 
+# --- ログイン画面 ---
+if 'current_player' not in st.session_state:
+    st.session_state.current_player = None
+
+if st.session_state.current_player is None:
+    st.title("🎳 モルック戦術支援アプリ")
+    st.subheader("プレイヤーを選択してください")
+
+    existing_players = db_conn.query(
+        "SELECT name FROM players ORDER BY name", ttl=0
+    )['name'].tolist()
+
+    if existing_players:
+        selected_player = st.selectbox("登録済みプレイヤー", existing_players)
+        if st.button("このプレイヤーでログイン", type="primary", use_container_width=True):
+            st.session_state.current_player = selected_player
+            st.rerun()
+        st.divider()
+
+    st.caption("新しいプレイヤーを追加")
+    new_player_name = st.text_input("プレイヤー名")
+    if st.button("追加してログイン", use_container_width=True):
+        name = new_player_name.strip()
+        if name:
+            with db_conn.session as s:
+                s.execute(
+                    text("INSERT INTO players (name) VALUES (:name) ON CONFLICT (name) DO NOTHING"),
+                    {"name": name}
+                )
+                s.commit()
+            st.session_state.current_player = name
+            st.rerun()
+        else:
+            st.warning("名前を入力してください。")
+
+    st.stop()
+
 # --- メニュー ---
 if st.query_params.get("page") == "sim":
     st.session_state['_page'] = "🤖 AI戦術提示シミュレーター"
+
+col_player, col_switch = st.columns([3, 1])
+with col_player:
+    st.caption(f"👤 プレイヤー: {st.session_state.current_player}")
+with col_switch:
+    if st.button("切替", use_container_width=True):
+        st.session_state.current_player = None
+        st.rerun()
 
 page = st.radio(
     "メニューを切り替え",
@@ -405,11 +453,10 @@ st.session_state['_page'] = page
 st.divider()
 
 @st.cache_data(ttl=60)
-def load_data():
-    conn = sqlite3.connect('molkky.db')
-    df = pd.read_sql_query("SELECT * FROM throw_logs", conn)
-    conn.close()
-    return df
+def load_data(player):
+    return db_conn.query(
+        "SELECT * FROM throw_logs WHERE player = :player", params={"player": player}, ttl=0
+    )
 
 # --- 状態管理 ---
 if 'obstacles' not in st.session_state:
@@ -435,16 +482,10 @@ if 'my_score_game' not in st.session_state:
     st.session_state.my_score_game = 0
 if 'my_miss_game' not in st.session_state:
     st.session_state.my_miss_game = 0
-if 'opp_score_game' not in st.session_state:
-    st.session_state.opp_score_game = 0
-if 'opp_miss_game' not in st.session_state:
-    st.session_state.opp_miss_game = 0
 if 'game_message' not in st.session_state:
     st.session_state.game_message = None
 if 'my_total_score' not in st.session_state:
     st.session_state.my_total_score = 0
-if 'opp_total_score' not in st.session_state:
-    st.session_state.opp_total_score = 0
 
 # ==========================================
 # 画面1：🎯 投擲データ記録
@@ -488,15 +529,9 @@ if page == "🎯 投擲データ記録":
     st.title("🎯 投擲データ入力")
 
     # 得点表示
-    col_s1, col_s2 = st.columns(2)
-    with col_s1:
-        st.metric("自分の得点", f"{st.session_state.my_score_game}点")
-        st.caption(f"連続ミス：{st.session_state.my_miss_game}回")
-        st.caption(f"累計得点：{st.session_state.my_total_score}点")
-    with col_s2:
-        st.metric("相手の得点", f"{st.session_state.opp_score_game}点")
-        st.caption(f"連続ミス：{st.session_state.opp_miss_game}回")
-        st.caption(f"累計得点：{st.session_state.opp_total_score}点")
+    st.metric("自分の得点", f"{st.session_state.my_score_game}点")
+    st.caption(f"連続ミス：{st.session_state.my_miss_game}回")
+    st.caption(f"累計得点：{st.session_state.my_total_score}点")
 
     if st.session_state.get('game_message'):
         st.info(st.session_state.game_message)
@@ -508,8 +543,6 @@ if page == "🎯 投擲データ記録":
     if st.button("🔄 得点をリセット", use_container_width=True):
         st.session_state.my_score_game = 0
         st.session_state.my_miss_game = 0
-        st.session_state.opp_score_game = 0
-        st.session_state.opp_miss_game = 0
         st.rerun()
 
     st.divider()
@@ -557,19 +590,26 @@ if page == "🎯 投擲データ記録":
         hit_no = None
 
     if st.button("記録を保存する", type="primary", use_container_width=True):
-        conn = sqlite3.connect('molkky.db')
-        c = conn.cursor()
-        c.execute('''INSERT INTO throw_logs 
-                     (dist, target_no, is_success, n, ne, e, se, s, sw, w, nw, timestamp)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                  (dist, target_no, 1 if success_val == "成功" else (2 if success_val == "得点あり失敗" else 0),
-                   st.session_state.obstacles['n'], st.session_state.obstacles['ne'],
-                   st.session_state.obstacles['e'], st.session_state.obstacles['se'],
-                   st.session_state.obstacles['s'], st.session_state.obstacles['sw'],
-                   st.session_state.obstacles['w'], st.session_state.obstacles['nw'],
-                   datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-        conn.commit()
-        conn.close()
+        with db_conn.session as s:
+            s.execute(text('''INSERT INTO throw_logs
+                         (dist, target_no, is_success, n, ne, e, se, s, sw, w, nw, player, timestamp)
+                         VALUES (:dist, :target_no, :is_success, :n, :ne, :e, :se, :s, :sw, :w, :nw, :player, :ts)'''),
+                      {
+                          "dist": dist,
+                          "target_no": target_no,
+                          "is_success": 1 if success_val == "成功" else (2 if success_val == "得点あり失敗" else 0),
+                          "n": int(st.session_state.obstacles['n']),
+                          "ne": int(st.session_state.obstacles['ne']),
+                          "e": int(st.session_state.obstacles['e']),
+                          "se": int(st.session_state.obstacles['se']),
+                          "s": int(st.session_state.obstacles['s']),
+                          "sw": int(st.session_state.obstacles['sw']),
+                          "w": int(st.session_state.obstacles['w']),
+                          "nw": int(st.session_state.obstacles['nw']),
+                          "player": st.session_state.current_player,
+                          "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                      })
+            s.commit()
 
         # 得点計算
         if success_val == "成功":
@@ -577,12 +617,9 @@ if page == "🎯 投擲データ記録":
             st.session_state.my_miss_game = 0
             if st.session_state.my_score_game == 50:
                 st.session_state.my_total_score += 50
-                st.session_state.opp_total_score += st.session_state.opp_score_game
                 st.session_state.my_score_game = 0
                 st.session_state.my_miss_game = 0
-                st.session_state.opp_score_game = 0
-                st.session_state.opp_miss_game = 0
-                st.session_state.game_message = "🎉 50点ちょうど！勝利！次の試合へ"
+                st.session_state.game_message = "🎉 50点ちょうど！このゲームクリア！次のゲームへ"
             elif st.session_state.my_score_game > 50:
                 st.session_state.my_score_game = 25
         elif success_val == "得点あり失敗":
@@ -591,24 +628,18 @@ if page == "🎯 投擲データ記録":
                 st.session_state.my_miss_game = 0
                 if st.session_state.my_score_game == 50:
                     st.session_state.my_total_score += 50
-                    st.session_state.opp_total_score += st.session_state.opp_score_game
                     st.session_state.my_score_game = 0
                     st.session_state.my_miss_game = 0
-                    st.session_state.opp_score_game = 0
-                    st.session_state.opp_miss_game = 0
-                    st.session_state.game_message = "🎉 50点ちょうど！勝利！次の試合へ"
+                    st.session_state.game_message = "🎉 50点ちょうど！このゲームクリア！次のゲームへ"
                 elif st.session_state.my_score_game > 50:
                     st.session_state.my_score_game = 25
         else:
             st.session_state.my_miss_game += 1
             if st.session_state.my_miss_game >= 3:
-                st.session_state.opp_total_score += st.session_state.opp_score_game
                 st.session_state.my_total_score += st.session_state.my_score_game
                 st.session_state.my_score_game = 0
                 st.session_state.my_miss_game = 0
-                st.session_state.opp_score_game = 0
-                st.session_state.opp_miss_game = 0
-                st.session_state.game_message = "😢 3回連続ミス！敗北...次の試合へ"
+                st.session_state.game_message = "😢 3回連続ミス！このゲーム終了...次のゲームへ"
 
         for k in st.session_state.obstacles:
             st.session_state.obstacles[k] = False
@@ -616,42 +647,9 @@ if page == "🎯 投擲データ記録":
         st.success("データを保存しました！")
         st.rerun()
 
-    st.divider()
-    st.subheader("相手のターン")
-    st.caption("倒れたスキットルの番号を押してください")
-    
-    opp_cols = st.columns(6)
-    for i, n in enumerate(range(1, 13)):
-        with opp_cols[i % 6]:
-            if st.button(f"{'①②③④⑤⑥⑦⑧⑨⑩⑪⑫'[n-1]}", key=f"opp_btn_{n}", use_container_width=True):
-                st.session_state.opp_score_game += n
-                st.session_state.opp_miss_game = 0
-                if st.session_state.opp_score_game == 50:
-                    st.session_state.opp_total_score += 50
-                    st.session_state.my_total_score += st.session_state.my_score_game
-                    st.session_state.my_score_game = 0
-                    st.session_state.my_miss_game = 0
-                    st.session_state.opp_score_game = 0
-                    st.session_state.opp_miss_game = 0
-                    st.session_state.game_message = "😢 相手が50点！敗北...次の試合へ"
-                elif st.session_state.opp_score_game > 50:
-                    st.session_state.opp_score_game = 25
-                st.rerun()
-    
-    if st.button("相手ミス", use_container_width=True):
-        st.session_state.opp_miss_game += 1
-        if st.session_state.opp_miss_game >= 3:
-            st.session_state.my_total_score += 50
-            st.session_state.opp_total_score += st.session_state.opp_score_game
-            st.session_state.my_score_game = 0
-            st.session_state.my_miss_game = 0
-            st.session_state.opp_score_game = 0
-            st.session_state.opp_miss_game = 0
-            st.session_state.game_message = "🎉 相手3回連続ミス！勝利！次の試合へ"
-        st.rerun()
     st.subheader("📊 距離別の成功率実績")
 
-    df = load_data()
+    df = load_data(st.session_state.current_player)
 
     if not df.empty:
         stats_df = df.groupby('dist').apply(
@@ -921,7 +919,7 @@ else:
 
         st.write("")
         if st.button("🚀 勝利確率を計算する", type="primary", use_container_width=True):
-            df = load_data()
+            df = load_data(st.session_state.current_player)
             if df.empty:
                 st.warning("投擲データがありません。先にデータを記録してください。")
             elif not any(v for v in st.session_state.skittle_m_coords.values()):
@@ -959,7 +957,9 @@ else:
                     st.write("---")
                     st.write("🔍 1試行の座標変化（デバッグ用）:")
                     trace_log = trace_one_simulation(
-                        top3[0][0], my_score, my_miss, opp_score, opp_miss,
+                        top3[0][0], my_score, my_miss,
+                        st.session_state.opponents[0]["score"],
+                        st.session_state.opponents[0]["miss"],
                         st.session_state.skittle_m_coords, df
                     )
                     for label, coords_snapshot, ms_val, os_val in trace_log:
