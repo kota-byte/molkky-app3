@@ -393,6 +393,20 @@ def run_simulation(
 
     return results
 
+# --- 履歴のスワイプ削除（クエリパラメータ経由で受け取る） ---
+delete_id = st.query_params.get("delete_id")
+if delete_id is not None:
+    with db_conn.session as s:
+        s.execute(text("DELETE FROM throw_logs WHERE id = :id"), {"id": int(delete_id)})
+        s.commit()
+    restore_player = st.query_params.get("player")
+    st.query_params.clear()
+    st.cache_data.clear()
+    if restore_player:
+        st.session_state.current_player = restore_player
+    st.session_state['_page'] = "🎯 投擲データ記録"
+    st.rerun()
+
 # --- ログイン画面 ---
 if 'current_player' not in st.session_state:
     st.session_state.current_player = None
@@ -450,6 +464,20 @@ page = st.radio(
 )
 st.session_state['_page'] = page
 
+# スマホでの横スクロールを防ぐ（両画面共通）
+st.markdown("""
+    <style>
+    html, body {
+        overflow-x: hidden !important;
+        max-width: 100vw !important;
+    }
+    .block-container {
+        max-width: 100vw !important;
+        overflow-x: hidden !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 st.divider()
 
 @st.cache_data(ttl=60)
@@ -457,6 +485,152 @@ def load_data(player):
     return db_conn.query(
         "SELECT * FROM throw_logs WHERE player = :player", params={"player": player}, ttl=0
     )
+
+def render_swipeable_history(subset_df, max_height=None):
+    """投擲履歴を1行ずつ表示し、左にスワイプすると削除ボタンが出るコンポーネント"""
+    if subset_df.empty:
+        return
+
+    import json as _json
+    rows = [
+        {
+            "id": int(row['id']),
+            "timestamp": row['timestamp'],
+            "target_label": row['狙った番号'],
+            "dist_label": row['距離'],
+            "result_label": row['結果'],
+        }
+        for _, row in subset_df.iterrows()
+    ]
+    rows_json = _json.dumps(rows)
+    current_player_json = _json.dumps(st.session_state.current_player)
+
+    row_h = 58
+    content_height = row_h * len(rows)
+    iframe_height = min(content_height, max_height) if max_height else content_height
+    needs_scroll = bool(max_height and content_height > max_height)
+
+    html = f"""<!DOCTYPE html>
+<html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{{margin:0;padding:0;box-sizing:border-box;font-family:sans-serif;-webkit-tap-highlight-color:transparent;}}
+html,body{{height:100%;background:transparent;overflow-x:hidden;max-width:100%;}}
+.row-wrap{{position:relative;overflow:hidden;height:{row_h}px;border-bottom:1px solid #e2e8f0;}}
+.row-delete{{
+  position:absolute;inset:0;
+  background:#ef4444;
+  display:flex;align-items:center;justify-content:flex-end;
+  padding-right:18px;
+}}
+.row-delete button{{
+  border:none;background:transparent;color:#fff;
+  font-size:13px;font-weight:600;cursor:pointer;padding:8px;
+}}
+.row-content{{
+  position:relative;height:100%;
+  background:#f8fafc;color:#1e293b;
+  display:flex;flex-direction:column;justify-content:center;
+  padding:6px 14px;
+  transform:translateX(0);
+  touch-action:pan-y;
+  will-change:transform;
+}}
+.row-content .ts{{font-size:11px;color:#64748b;}}
+.row-content .main{{font-size:13px;margin-top:2px;}}
+</style></head>
+<body>
+<div id="list"></div>
+<script>
+const rows = {rows_json};
+const CURRENT_PLAYER = {current_player_json};
+const REVEAL = 70;
+const list = document.getElementById('list');
+
+rows.forEach(r => {{
+  const wrap = document.createElement('div');
+  wrap.className = 'row-wrap';
+
+  const del = document.createElement('div');
+  del.className = 'row-delete';
+  del.innerHTML = '<button>削除</button>';
+  wrap.appendChild(del);
+
+  const content = document.createElement('div');
+  content.className = 'row-content';
+  content.innerHTML =
+    '<div class="ts">' + r.timestamp + '</div>' +
+    '<div class="main">' + r.target_label + '・' + r.dist_label + '・' + r.result_label + '</div>';
+  wrap.appendChild(content);
+  list.appendChild(wrap);
+
+  let startX = 0, startY = 0, dragging = false, opened = false, moved = false, lock = null;
+
+  function applyTransform(x, animate) {{
+    content.style.transition = animate ? 'transform .15s ease' : 'none';
+    content.style.transform = 'translateX(' + x + 'px)';
+  }}
+
+  function onStart(x, y) {{
+    dragging = true;
+    moved = false;
+    lock = null;
+    startX = x;
+    startY = y;
+  }}
+  function onMove(x, y, ev) {{
+    if (!dragging) return;
+    if (lock === null) {{
+      const dx = x - startX, dy = y - startY;
+      if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+      lock = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
+      if (lock === 'v') {{ dragging = false; return; }}
+    }}
+    if (lock !== 'h') return;
+    if (ev && ev.cancelable) ev.preventDefault();
+    moved = true;
+    const delta = x - startX;
+    const next = Math.min(0, Math.max(-REVEAL, (opened ? -REVEAL : 0) + delta));
+    applyTransform(next, false);
+  }}
+  function onEnd(x) {{
+    if (!dragging) {{ dragging = false; return; }}
+    dragging = false;
+    if (lock !== 'h') return;
+    const delta = x - startX;
+    const total = (opened ? -REVEAL : 0) + delta;
+    if (total < -REVEAL / 2) {{ applyTransform(-REVEAL, true); opened = true; }}
+    else {{ applyTransform(0, true); opened = false; }}
+  }}
+
+  content.addEventListener('touchstart', e => onStart(e.touches[0].clientX, e.touches[0].clientY), {{passive:true}});
+  content.addEventListener('touchmove',  e => onMove(e.touches[0].clientX, e.touches[0].clientY, e),  {{passive:false}});
+  content.addEventListener('touchend',   e => onEnd(e.changedTouches[0].clientX));
+  content.addEventListener('mousedown',  e => {{
+    e.preventDefault();
+    onStart(e.clientX, e.clientY);
+    const mm = ev => onMove(ev.clientX, ev.clientY);
+    const mu = ev => {{
+      onEnd(ev.clientX);
+      document.removeEventListener('mousemove', mm);
+      document.removeEventListener('mouseup', mu);
+    }};
+    document.addEventListener('mousemove', mm);
+    document.addEventListener('mouseup', mu);
+  }});
+  content.addEventListener('click', () => {{
+    if (opened && !moved) {{ applyTransform(0, true); opened = false; }}
+  }});
+
+  del.querySelector('button').addEventListener('click', () => {{
+    if (confirm('この記録を削除しますか？\\n' + r.timestamp + ' ' + r.target_label)) {{
+      window.parent.location.href = '/?delete_id=' + r.id + '&player=' + encodeURIComponent(CURRENT_PLAYER);
+    }}
+  }});
+}});
+</script>
+</body></html>"""
+    components.html(html, height=iframe_height, scrolling=needs_scroll)
 
 # --- 状態管理 ---
 if 'obstacles' not in st.session_state:
@@ -501,10 +675,6 @@ if page == "🎯 投擲データ記録":
             padding-left: 8px !important;
             padding-right: 8px !important;
             padding-top: 5rem !important;
-        }
-        html, body {
-            overflow-x: hidden !important;
-            max-width: 100vw !important;
         }
         div[data-testid="stHorizontalBlock"] {
             display: flex !important;
@@ -681,7 +851,8 @@ if page == "🎯 投擲データ記録":
         df_disp = df_disp.sort_values(by='timestamp', ascending=False)
 
         st.markdown("### 📜 最新の投擲履歴（5件）")
-        st.dataframe(df_disp.head(5)[['timestamp', '狙った番号', '距離', '結果']], use_container_width=True)
+        st.caption("行を左にスワイプすると削除ボタンが表示されます")
+        render_swipeable_history(df_disp.head(5))
 
         st.write("")
 
@@ -701,7 +872,8 @@ if page == "🎯 投擲データ記録":
         if len(df_disp) > 5:
             if st.checkbox("📁 6件目より過去のすべての履歴を表示する"):
                 st.markdown("### 📚 過去の投擲履歴（全件）")
-                st.dataframe(df_disp[['timestamp', '狙った番号', '距離', '結果']], use_container_width=True, height=300)
+                st.caption("行を左にスワイプすると削除ボタンが表示されます")
+                render_swipeable_history(df_disp, max_height=320)
 
     else:
         st.info("データを保存すると、ここに自動で成功率のグラフが生成されます。")
