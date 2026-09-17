@@ -817,9 +817,9 @@ if page == "🎯 投擲データ記録":
         ['sw', 's', 'se']
     ]
     labels = {
-        'nw': '左奥', 'n': '奥', 'ne': '奥右',
+        'nw': '左奥', 'n': '奥', 'ne': '右奥',
         'w': '左', 'e': '右',
-        'sw': '前左', 's': '前', 'se': '前右'
+        'sw': '左前', 's': '手前', 'se': '右前'
     }
 
     with st.container(key="obstacle_grid"):
@@ -944,8 +944,8 @@ if page == "🎯 投擲データ記録":
         actual_cols = [c for c in export_cols if c in df_disp.columns]
         df_csv = df_disp[actual_cols].copy()
         rename_dict = {
-            'n': '奥', 'ne': '奥右', 'e': '右', 'se': '前右',
-            's': '前', 'sw': '前左', 'w': '左', 'nw': '左奥'
+            'n': '奥', 'ne': '右奥', 'e': '右', 'se': '右前',
+            's': '手前', 'sw': '左前', 'w': '左', 'nw': '左奥'
         }
         df_csv = df_csv.rename(columns=rename_dict)
         try:
