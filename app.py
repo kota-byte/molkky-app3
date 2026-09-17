@@ -647,44 +647,10 @@ def get_player_state():
         }
     return st.session_state.player_game_state[p]
 
-# ==========================================
-# 画面1：🎯 投擲データ記録
-# ==========================================
-if page == "🎯 投擲データ記録":
+def render_theme_css():
+    """全画面共通の配色テーマ（暖色背景＋オレンジのアクセント）"""
     st.markdown("""
         <style>
-        {
-            max-width: 100% !important;
-            box-sizing: border-box !important;
-        }
-        .block-container {
-            padding-left: 8px !important;
-            padding-right: 8px !important;
-            padding-top: 5rem !important;
-        }
-        .st-key-info_row div[data-testid="stHorizontalBlock"] {
-            display: flex !important;
-            flex-direction: row !important;
-            flex-wrap: nowrap !important;
-            gap: 10px !important;
-            align-items: flex-start !important;
-        }
-        .st-key-info_row div[data-testid="stHorizontalBlock"] > div:nth-child(1) {
-            flex: 1 1 30% !important;
-            max-width: 30% !important;
-            min-width: 0px !important;
-        }
-        .st-key-info_row div[data-testid="stHorizontalBlock"] > div:nth-child(2) {
-            flex: 1 1 70% !important;
-            max-width: 70% !important;
-            min-width: 0px !important;
-        }
-        div.stButton > button {
-            width: 100% !important;
-            height: 55px !important;
-            padding: 0px !important;
-            font-size: 13px !important;
-        }
         .stApp {
             background: #FFE4B5;
         }
@@ -717,25 +683,6 @@ if page == "🎯 投擲データ記録":
             border: 2px dashed #E8C99B !important;
             color: #E8C99B !important;
             box-shadow: none !important;
-        }
-        .st-key-obstacle_grid div.stButton > button {
-            aspect-ratio: 1 / 1 !important;
-            height: auto !important;
-            width: 100% !important;
-            font-size: 15px !important;
-            font-weight: 800 !important;
-        }
-        .st-key-obstacle_grid div[data-testid="stHorizontalBlock"] {
-            display: flex !important;
-            flex-direction: row !important;
-            flex-wrap: nowrap !important;
-            gap: 10px !important;
-            margin-bottom: 10px !important;
-        }
-        .st-key-obstacle_grid div[data-testid="stHorizontalBlock"] > div {
-            flex: 1 1 33.33% !important;
-            max-width: 33.33% !important;
-            min-width: 0px !important;
         }
         div[data-testid="stSelectbox"] div[role="group"] {
             background-color: #FFFFFF !important;
@@ -772,6 +719,67 @@ if page == "🎯 投擲データ記録":
         }
         div[data-testid="stSliderTrackFill"], div[data-testid="stSlider"] div[style*="background-color: rgb(255, 75, 75)"] {
             background-color: #FF6B35 !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
+# ==========================================
+# 画面1：🎯 投擲データ記録
+# ==========================================
+if page == "🎯 投擲データ記録":
+    render_theme_css()
+    st.markdown("""
+        <style>
+        {
+            max-width: 100% !important;
+            box-sizing: border-box !important;
+        }
+        .block-container {
+            padding-left: 8px !important;
+            padding-right: 8px !important;
+            padding-top: 5rem !important;
+        }
+        .st-key-info_row div[data-testid="stHorizontalBlock"] {
+            display: flex !important;
+            flex-direction: row !important;
+            flex-wrap: nowrap !important;
+            gap: 10px !important;
+            align-items: flex-start !important;
+        }
+        .st-key-info_row div[data-testid="stHorizontalBlock"] > div:nth-child(1) {
+            flex: 1 1 30% !important;
+            max-width: 30% !important;
+            min-width: 0px !important;
+        }
+        .st-key-info_row div[data-testid="stHorizontalBlock"] > div:nth-child(2) {
+            flex: 1 1 70% !important;
+            max-width: 70% !important;
+            min-width: 0px !important;
+        }
+        div.stButton > button {
+            width: 100% !important;
+            height: 55px !important;
+            padding: 0px !important;
+            font-size: 13px !important;
+        }
+        .st-key-obstacle_grid div.stButton > button {
+            aspect-ratio: 1 / 1 !important;
+            height: auto !important;
+            width: 100% !important;
+            font-size: 15px !important;
+            font-weight: 800 !important;
+        }
+        .st-key-obstacle_grid div[data-testid="stHorizontalBlock"] {
+            display: flex !important;
+            flex-direction: row !important;
+            flex-wrap: nowrap !important;
+            gap: 10px !important;
+            margin-bottom: 10px !important;
+        }
+        .st-key-obstacle_grid div[data-testid="stHorizontalBlock"] > div {
+            flex: 1 1 33.33% !important;
+            max-width: 33.33% !important;
+            min-width: 0px !important;
         }
         </style>
         """, unsafe_allow_html=True)
@@ -1003,7 +1011,11 @@ else:
     # 通常モード UI
     # -------------------------------------------------------
     if not st.session_state.fullscreen:
-        st.title("🤖 AI戦術提示シミュレーター")
+        render_theme_css()
+        st.markdown(
+            '<h1 style="font-size:28px; line-height:1.3;">🤖 AI戦術提示<br>シミュレーター</h1>',
+            unsafe_allow_html=True,
+        )
         st.caption("試合状況と全スキットルの配置から、モンテカルロシミュレーションで勝利確率を計算します。")
 
         # 自分のスコア入力
