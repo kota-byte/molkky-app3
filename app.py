@@ -712,6 +712,17 @@ if page == "🎯 投擲データ記録":
             color: #E8C99B !important;
             box-shadow: none !important;
         }
+        .st-key-obstacle_grid div.stButton > button {
+            aspect-ratio: 1 / 1 !important;
+            height: auto !important;
+            width: 100% !important;
+            font-size: 15px !important;
+            font-weight: 800 !important;
+        }
+        .st-key-obstacle_grid div[data-testid="stHorizontalBlock"] {
+            gap: 10px !important;
+            margin-bottom: 10px !important;
+        }
         div[data-testid="stSelectbox"] div[role="group"] {
             background-color: #FFFFFF !important;
             border: 2px solid #FF6B35 !important;
@@ -774,11 +785,8 @@ if page == "🎯 投擲データ記録":
 
     st.divider()
 
-    col_info1, col_info2 = st.columns(2)
-    with col_info1:
-        target_no = st.selectbox("狙う番号", list(range(1, 13)), index=11)
-    with col_info2:
-        dist = st.slider("距離 (m)", 3.0, 10.0, 3.5, 0.5)
+    target_no = st.selectbox("狙う番号", list(range(1, 13)), index=11)
+    dist = st.slider("距離 (m)", 3.0, 10.0, 3.5, 0.5)
 
     st.divider()
 
@@ -796,17 +804,18 @@ if page == "🎯 投擲データ記録":
         'sw': '前左', 's': '真前', 'se': '前右'
     }
 
-    for row in keys:
-        cols = st.columns(3)
-        for i, key in enumerate(row):
-            if key is None:
-                cols[i].button("🎯", disabled=True, key="center_target")
-            else:
-                is_active = st.session_state.obstacles[key]
-                label = f"🚩 {labels[key]}" if is_active else labels[key]
-                if cols[i].button(label, key=f"btn_{key}"):
-                    st.session_state.obstacles[key] = not st.session_state.obstacles[key]
-                    st.rerun()
+    with st.container(key="obstacle_grid"):
+        for row in keys:
+            cols = st.columns(3, gap="small")
+            for i, key in enumerate(row):
+                if key is None:
+                    cols[i].button("🎯", disabled=True, key="center_target")
+                else:
+                    is_active = st.session_state.obstacles[key]
+                    label = f"🚩 {labels[key]}" if is_active else labels[key]
+                    if cols[i].button(label, key=f"btn_{key}"):
+                        st.session_state.obstacles[key] = not st.session_state.obstacles[key]
+                        st.rerun()
 
     st.divider()
 
