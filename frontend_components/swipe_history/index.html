@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:sans-serif;-webkit-tap-highlight-color:transparent;}
+html,body{overflow-x:hidden;max-width:100%;background:transparent;}
+#list{width:100%;}
+.row-wrap{position:relative;overflow:hidden;height:58px;border-bottom:1px solid #e2e8f0;}
+.row-delete{
+  position:absolute;inset:0;
+  background:#ef4444;
+  display:flex;align-items:center;justify-content:flex-end;
+  padding-right:18px;
+}
+.row-delete button{
+  border:none;background:transparent;color:#fff;
+  font-size:13px;font-weight:600;cursor:pointer;padding:8px;
+}
+.row-content{
+  position:relative;height:100%;
+  background:#f8fafc;color:#1e293b;
+  display:flex;flex-direction:column;justify-content:center;
+  padding:6px 14px;
+  transform:translateX(0);
+  touch-action:pan-y;
+  will-change:transform;
+}
+.row-content .ts{font-size:11px;color:#64748b;}
+.row-content .main{font-size:13px;margin-top:2px;}
+#scroller{overflow-y:auto;}
+</style>
+</head>
+<body>
+<div id="scroller"><div id="list"></div></div>
+<script>
+const REVEAL = 70;
+
+function sendToStreamlit(type, data) {
+  const outData = Object.assign({ isStreamlitMessage: true, type: type }, data);
+  window.parent.postMessage(outData, "*");
+}
+function setFrameHeight(height) {
+  sendToStreamlit("streamlit:setFrameHeight", { height: height });
+}
+function setComponentValue(value) {
+  sendToStreamlit("streamlit:setComponentValue", { value: value, dataType: "json" });
+}
+
+function renderRows(rows, maxHeight) {
+  const list = document.getElementById("list");
+  const scroller = document.getElementById("scroller");
+  list.innerHTML = "";
+
+  rows.forEach(r => {
+    const wrap = document.createElement("div");
+    wrap.className = "row-wrap";
+
+    const del = document.createElement("div");
+    del.className = "row-delete";
+    del.innerHTML = "<button>削除</button>";
+    wrap.appendChild(del);
+
+    const content = document.createElement("div");
+    content.className = "row-content";
+    content.innerHTML =
+      '<div class="ts">' + r.timestamp + "</div>" +
+      '<div class="main">' + r.target_label + "・" + r.dist_label + "・" + r.result_label + "</div>";
+    wrap.appendChild(content);
+    list.appendChild(wrap);
+
+    let startX = 0, startY = 0, dragging = false, opened = false, lock = null;
+
+    function applyTransform(x, animate) {
+      content.style.transition = animate ? "transform .15s ease" : "none";
+      content.style.transform = "translateX(" + x + "px)";
+    }
+    function onStart(x, y) {
+      dragging = true;
+      lock = null;
+      startX = x;
+      startY = y;
+    }
+    function onMove(x, y, ev) {
+      if (!dragging) return;
+      if (lock === null) {
+        const dx = x - startX, dy = y - startY;
+        if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+        lock = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
+        if (lock === "v") { dragging = false; return; }
+      }
+      if (lock !== "h") return;
+      if (ev && ev.cancelable) ev.preventDefault();
+      const delta = x - startX;
+      const next = Math.min(0, Math.max(-REVEAL, (opened ? -REVEAL : 0) + delta));
+      applyTransform(next, false);
+    }
+    function onEnd(x) {
+      if (!dragging) { dragging = false; return; }
+      dragging = false;
+      if (lock !== "h") return;
+      const delta = x - startX;
+      const total = (opened ? -REVEAL : 0) + delta;
+      if (total < -REVEAL / 2) { applyTransform(-REVEAL, true); opened = true; }
+      else { applyTransform(0, true); opened = false; }
+    }
+
+    content.addEventListener("touchstart", e => onStart(e.touches[0].clientX, e.touches[0].clientY), { passive: true });
+    content.addEventListener("touchmove", e => onMove(e.touches[0].clientX, e.touches[0].clientY, e), { passive: false });
+    content.addEventListener("touchend", e => onEnd(e.changedTouches[0].clientX));
+    content.addEventListener("mousedown", e => {
+      e.preventDefault();
+      onStart(e.clientX, e.clientY);
+      const mm = ev => onMove(ev.clientX, ev.clientY);
+      const mu = ev => {
+        onEnd(ev.clientX);
+        document.removeEventListener("mousemove", mm);
+        document.removeEventListener("mouseup", mu);
+      };
+      document.addEventListener("mousemove", mm);
+      document.addEventListener("mouseup", mu);
+    });
+    content.addEventListener("click", () => {
+      if (opened) { applyTransform(0, true); opened = false; }
+    });
+
+    del.querySelector("button").addEventListener("click", () => {
+      setComponentValue(r.id);
+    });
+  });
+
+  const contentHeight = rows.length * 58;
+  if (maxHeight && contentHeight > maxHeight) {
+    scroller.style.maxHeight = maxHeight + "px";
+    setFrameHeight(maxHeight);
+  } else {
+    scroller.style.maxHeight = "none";
+    setFrameHeight(contentHeight);
+  }
+}
+
+function onRender(event) {
+  const args = event.data.args;
+  renderRows(args.rows || [], args.maxHeight || null);
+}
+
+window.addEventListener("message", event => {
+  if (event.data.type === "streamlit:render") {
+    onRender(event);
+  }
+});
+
+sendToStreamlit("streamlit:componentReady", { apiVersion: 1 });
+setFrameHeight(1);
+</script>
+</body>
+</html>
