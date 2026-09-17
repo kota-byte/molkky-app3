@@ -1,4 +1,4 @@
-streamlit-drawable-canvas
+streamlit-drawable-canvas==0.9.3
 pandas
 sqlalchemy
 psycopg2-binary
