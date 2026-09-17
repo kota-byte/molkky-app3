@@ -679,6 +679,75 @@ if page == "🎯 投擲データ記録":
             padding: 0px !important;
             font-size: 13px !important;
         }
+        .stApp {
+            background: #FFE4B5;
+        }
+        div.stButton > button {
+            border-radius: 14px !important;
+            font-weight: 700 !important;
+            border: 2px solid #FF6B35 !important;
+            color: #FF6B35 !important;
+            background: #FFFFFF !important;
+            transition: transform .08s ease, box-shadow .08s ease;
+            box-shadow: 0 2px 0 rgba(255,107,53,0.25);
+        }
+        div.stButton > button:hover {
+            background: #FFF1E6 !important;
+        }
+        div.stButton > button:active {
+            transform: translateY(2px);
+            box-shadow: none;
+        }
+        div.stButton > button[kind="primary"] {
+            background: #FF6B35 !important;
+            color: #FFFFFF !important;
+            border: 2px solid #FF6B35 !important;
+        }
+        div.stButton > button[kind="primary"]:hover {
+            background: #FF8156 !important;
+        }
+        div.stButton > button:disabled {
+            background: #FFFFFF !important;
+            border: 2px dashed #E8C99B !important;
+            color: #E8C99B !important;
+            box-shadow: none !important;
+        }
+        div[data-testid="stSelectbox"] div[role="group"] {
+            background-color: #FFFFFF !important;
+            border: 2px solid #FF6B35 !important;
+            border-radius: 12px !important;
+        }
+        div[data-testid="stSelectbox"] input {
+            background-color: #FFFFFF !important;
+            color: #1e293b !important;
+        }
+        div[data-testid="stSelectbox"] button svg {
+            fill: #FF6B35 !important;
+        }
+        [role="listbox"] {
+            background-color: #FFFFFF !important;
+            border: 2px solid #FF6B35 !important;
+        }
+        [role="option"] {
+            background-color: #FFFFFF !important;
+            color: #1e293b !important;
+        }
+        [role="option"][aria-selected="true"],
+        [role="option"]:hover {
+            background-color: #FFE4B5 !important;
+        }
+        div[data-testid="stMetric"] {
+            background: #FFFFFF;
+            border: 2px solid #FF6B35;
+            border-radius: 14px;
+            padding: 10px 14px;
+        }
+        div[data-testid="stSlider"] [data-baseweb="slider"] div[role="slider"] {
+            background-color: #FF6B35 !important;
+        }
+        div[data-testid="stSliderTrackFill"], div[data-testid="stSlider"] div[style*="background-color: rgb(255, 75, 75)"] {
+            background-color: #FF6B35 !important;
+        }
         </style>
         """, unsafe_allow_html=True)
 
