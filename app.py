@@ -927,7 +927,11 @@ if page == "🎯 投擲データ記録":
         import altair as alt
         chart = alt.Chart(stats_df).mark_bar(color="#1f77b4").encode(
             y=alt.Y('dist_label:N', title='投擲距離 (m)', sort=None),
-            x=alt.X('success_rate:Q', title='成功率 (%)', scale=alt.Scale(domain=[0, 100])),
+            x=alt.X(
+                'success_rate:Q', title='成功率 (%)',
+                scale=alt.Scale(domain=[0, 108]),
+                axis=alt.Axis(values=list(range(0, 101, 10))),
+            ),
             tooltip=[
                 alt.Tooltip('dist_label:N', title='距離'),
                 alt.Tooltip('success_rate:Q', title='成功率', format='.1f'),
