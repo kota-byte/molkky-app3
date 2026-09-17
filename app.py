@@ -403,23 +403,95 @@ if 'current_player' not in st.session_state:
     st.session_state.current_player = None
 
 if st.session_state.current_player is None:
-    st.title("🎳 モルック戦術支援アプリ")
-    st.subheader("プレイヤーを選択してください")
+    st.markdown("""
+        <style>
+        .stApp {
+            background: #FFE4B5;
+        }
+        div[data-testid="stSelectbox"] div[role="group"] {
+            background-color: #FFFFFF !important;
+            border: 2px solid #FF6B35 !important;
+            border-radius: 12px !important;
+        }
+        div[data-testid="stSelectbox"] input {
+            background-color: #FFFFFF !important;
+            color: #1e293b !important;
+        }
+        div[data-testid="stSelectbox"] button svg {
+            fill: #FF6B35 !important;
+        }
+        div.stButton > button {
+            border-radius: 16px !important;
+            font-weight: 700 !important;
+            font-size: 16px !important;
+            padding: 0.6rem 0.5rem !important;
+            border: 2px solid #FF6B35 !important;
+            color: #FF6B35 !important;
+            background: #FFFFFF !important;
+            transition: transform .08s ease, box-shadow .08s ease;
+            box-shadow: 0 2px 0 rgba(255,107,53,0.25);
+        }
+        div.stButton > button:hover {
+            background: #FFF1E6 !important;
+        }
+        div.stButton > button:active {
+            transform: translateY(2px);
+            box-shadow: none;
+        }
+        div.stButton > button[kind="primary"] {
+            background: #FF6B35 !important;
+            color: #FFFFFF !important;
+            border: 2px solid #FF6B35 !important;
+        }
+        div.stButton > button[kind="primary"]:hover {
+            background: #FF8156 !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
+    import base64 as _base64
+    with open("assets/skittles.png", "rb") as _f:
+        _skittles_b64 = _base64.b64encode(_f.read()).decode()
+    st.markdown(f"""
+        <div style="text-align:center;">
+            <img src="data:image/png;base64,{_skittles_b64}" width="110" />
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("""
+        <div style="text-align:center; padding: 4px 0 20px;">
+            <div style="font-size:26px; font-weight:800; color:#1e293b; line-height:1.3;">
+                モルック戦術<br>支援アプリ
+            </div>
+            <div style="font-size:14px; color:#94a3b8; margin-top:4px; font-weight:600;">
+                プレイヤーを選んでスタート！
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
     existing_players = db_conn.query(
         "SELECT name FROM players ORDER BY name", ttl=0
     )['name'].tolist()
 
     if existing_players:
-        selected_player = st.selectbox("登録済みプレイヤー", existing_players)
+        st.markdown(
+            "<div style='font-size:13px; font-weight:700; color:#94a3b8; margin-bottom:8px;'>"
+            "👥 登録済みプレイヤー</div>",
+            unsafe_allow_html=True,
+        )
+        selected_player = st.selectbox("登録済みプレイヤー", existing_players, label_visibility="collapsed")
         if st.button("このプレイヤーでログイン", type="primary", use_container_width=True):
             st.session_state.current_player = selected_player
             st.rerun()
-        st.divider()
+        st.write("")
 
-    st.caption("新しいプレイヤーを追加")
-    new_player_name = st.text_input("プレイヤー名")
-    if st.button("追加してログイン", use_container_width=True):
+    st.markdown(
+        "<div style='font-size:13px; font-weight:700; color:#94a3b8; margin: 12px 0 8px;'>"
+        "➕ 新しいプレイヤーを追加</div>",
+        unsafe_allow_html=True,
+    )
+    new_player_name = st.text_input("プレイヤー名", label_visibility="collapsed", placeholder="名前を入力")
+    if st.button("追加してログイン", type="primary", use_container_width=True):
         name = new_player_name.strip()
         if name:
             with db_conn.session as s:
