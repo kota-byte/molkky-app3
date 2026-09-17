@@ -420,6 +420,27 @@ if st.session_state.current_player is None:
         div[data-testid="stSelectbox"] button svg {
             fill: #FF6B35 !important;
         }
+        [role="listbox"] {
+            background-color: #FFFFFF !important;
+            border: 2px solid #FF6B35 !important;
+        }
+        [role="option"] {
+            background-color: #FFFFFF !important;
+            color: #1e293b !important;
+        }
+        [role="option"][aria-selected="true"],
+        [role="option"]:hover {
+            background-color: #FFE4B5 !important;
+        }
+        div[data-testid="stTextInputRootElement"] {
+            background-color: #FFFFFF !important;
+            border: 2px solid #FF6B35 !important;
+            border-radius: 12px !important;
+        }
+        div[data-testid="stTextInput"] input {
+            background-color: #FFFFFF !important;
+            color: #1e293b !important;
+        }
         div.stButton > button {
             border-radius: 16px !important;
             font-weight: 700 !important;
