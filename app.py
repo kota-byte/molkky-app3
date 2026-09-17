@@ -500,10 +500,17 @@ if st.session_state.current_player is None:
             "👥 登録済みプレイヤー</div>",
             unsafe_allow_html=True,
         )
-        selected_player = st.selectbox("登録済みプレイヤー", existing_players, label_visibility="collapsed")
+        selected_player = st.selectbox(
+            "登録済みプレイヤー", existing_players,
+            index=None, placeholder="選択してください",
+            label_visibility="collapsed",
+        )
         if st.button("このプレイヤーでログイン", type="primary", use_container_width=True):
-            st.session_state.current_player = selected_player
-            st.rerun()
+            if selected_player:
+                st.session_state.current_player = selected_player
+                st.rerun()
+            else:
+                st.warning("プレイヤーを選択してください。")
         st.write("")
 
     st.markdown(
