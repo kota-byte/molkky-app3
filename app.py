@@ -662,15 +662,21 @@ if page == "🎯 投擲データ記録":
             padding-right: 8px !important;
             padding-top: 5rem !important;
         }
-        div[data-testid="stHorizontalBlock"] {
+        .st-key-info_row div[data-testid="stHorizontalBlock"] {
             display: flex !important;
             flex-direction: row !important;
             flex-wrap: nowrap !important;
-            gap: 6px !important;
+            gap: 10px !important;
+            align-items: flex-start !important;
         }
-        div[data-testid="stHorizontalBlock"] > div {
-            flex: 1 1 33.33% !important;
-            max-width: 33.33% !important;
+        .st-key-info_row div[data-testid="stHorizontalBlock"] > div:nth-child(1) {
+            flex: 1 1 30% !important;
+            max-width: 30% !important;
+            min-width: 0px !important;
+        }
+        .st-key-info_row div[data-testid="stHorizontalBlock"] > div:nth-child(2) {
+            flex: 1 1 70% !important;
+            max-width: 70% !important;
             min-width: 0px !important;
         }
         div.stButton > button {
@@ -720,8 +726,16 @@ if page == "🎯 投擲データ記録":
             font-weight: 800 !important;
         }
         .st-key-obstacle_grid div[data-testid="stHorizontalBlock"] {
+            display: flex !important;
+            flex-direction: row !important;
+            flex-wrap: nowrap !important;
             gap: 10px !important;
             margin-bottom: 10px !important;
+        }
+        .st-key-obstacle_grid div[data-testid="stHorizontalBlock"] > div {
+            flex: 1 1 33.33% !important;
+            max-width: 33.33% !important;
+            min-width: 0px !important;
         }
         div[data-testid="stSelectbox"] div[role="group"] {
             background-color: #FFFFFF !important;
@@ -785,8 +799,12 @@ if page == "🎯 投擲データ記録":
 
     st.divider()
 
-    target_no = st.selectbox("狙う番号", list(range(1, 13)), index=11)
-    dist = st.slider("距離 (m)", 3.0, 10.0, 3.5, 0.5)
+    info_row = st.container(key="info_row")
+    col_info1, col_info2 = info_row.columns([1, 2])
+    with col_info1:
+        target_no = st.selectbox("狙う番号", list(range(1, 13)), index=11)
+    with col_info2:
+        dist = st.slider("距離 (m)", 3.0, 10.0, 3.5, 0.5)
 
     st.divider()
 
