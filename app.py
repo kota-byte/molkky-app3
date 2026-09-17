@@ -14,6 +14,7 @@ _SWIPE_HISTORY_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "f
 _swipe_history_component = components.declare_component("swipe_history", path=_SWIPE_HISTORY_DIR)
 
 # --- 1. データベース準備 ---
+@st.cache_resource
 def init_db():
     with db_conn.session as s:
         s.execute(text('''CREATE TABLE IF NOT EXISTS throw_logs
