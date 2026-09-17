@@ -531,14 +531,20 @@ if "skittle_m_coords" not in st.session_state:
 if "opponents" not in st.session_state:
     st.session_state.opponents = [{"score": 0, "miss": 0}]  # デフォルト1人
 
-if 'my_score_game' not in st.session_state:
-    st.session_state.my_score_game = 0
-if 'my_miss_game' not in st.session_state:
-    st.session_state.my_miss_game = 0
-if 'game_message' not in st.session_state:
-    st.session_state.game_message = None
-if 'my_total_score' not in st.session_state:
-    st.session_state.my_total_score = 0
+if 'player_game_state' not in st.session_state:
+    st.session_state.player_game_state = {}
+
+def get_player_state():
+    """ログイン中のプレイヤーごとに得点状態を分けて保持する"""
+    p = st.session_state.current_player
+    if p not in st.session_state.player_game_state:
+        st.session_state.player_game_state[p] = {
+            'my_score_game': 0,
+            'my_miss_game': 0,
+            'my_total_score': 0,
+            'game_message': None,
+        }
+    return st.session_state.player_game_state[p]
 
 # ==========================================
 # 画面1：🎯 投擲データ記録
@@ -577,21 +583,23 @@ if page == "🎯 投擲データ記録":
 
     st.title("🎯 投擲データ入力")
 
-    # 得点表示
-    st.metric("自分の得点", f"{st.session_state.my_score_game}点")
-    st.caption(f"連続ミス：{st.session_state.my_miss_game}回")
-    st.caption(f"累計得点：{st.session_state.my_total_score}点")
+    ps = get_player_state()
 
-    if st.session_state.get('game_message'):
-        st.info(st.session_state.game_message)
+    # 得点表示
+    st.metric("自分の得点", f"{ps['my_score_game']}点")
+    st.caption(f"連続ミス：{ps['my_miss_game']}回")
+    st.caption(f"累計得点：{ps['my_total_score']}点")
+
+    if ps['game_message']:
+        st.info(ps['game_message'])
         if st.button("OK"):
-            st.session_state.game_message = None
+            ps['game_message'] = None
             st.rerun()
 
     # リセットボタン
     if st.button("🔄 得点をリセット", use_container_width=True):
-        st.session_state.my_score_game = 0
-        st.session_state.my_miss_game = 0
+        ps['my_score_game'] = 0
+        ps['my_miss_game'] = 0
         st.rerun()
 
     st.divider()
@@ -662,33 +670,33 @@ if page == "🎯 投擲データ記録":
 
         # 得点計算
         if success_val == "成功":
-            st.session_state.my_score_game += target_no
-            st.session_state.my_miss_game = 0
-            if st.session_state.my_score_game == 50:
-                st.session_state.my_total_score += 50
-                st.session_state.my_score_game = 0
-                st.session_state.my_miss_game = 0
-                st.session_state.game_message = "🎉 50点ちょうど！このゲームクリア！次のゲームへ"
-            elif st.session_state.my_score_game > 50:
-                st.session_state.my_score_game = 25
+            ps['my_score_game'] += target_no
+            ps['my_miss_game'] = 0
+            if ps['my_score_game'] == 50:
+                ps['my_total_score'] += 50
+                ps['my_score_game'] = 0
+                ps['my_miss_game'] = 0
+                ps['game_message'] = "🎉 50点ちょうど！このゲームクリア！次のゲームへ"
+            elif ps['my_score_game'] > 50:
+                ps['my_score_game'] = 25
         elif success_val == "得点あり失敗":
             if hit_no:
-                st.session_state.my_score_game += hit_no
-                st.session_state.my_miss_game = 0
-                if st.session_state.my_score_game == 50:
-                    st.session_state.my_total_score += 50
-                    st.session_state.my_score_game = 0
-                    st.session_state.my_miss_game = 0
-                    st.session_state.game_message = "🎉 50点ちょうど！このゲームクリア！次のゲームへ"
-                elif st.session_state.my_score_game > 50:
-                    st.session_state.my_score_game = 25
+                ps['my_score_game'] += hit_no
+                ps['my_miss_game'] = 0
+                if ps['my_score_game'] == 50:
+                    ps['my_total_score'] += 50
+                    ps['my_score_game'] = 0
+                    ps['my_miss_game'] = 0
+                    ps['game_message'] = "🎉 50点ちょうど！このゲームクリア！次のゲームへ"
+                elif ps['my_score_game'] > 50:
+                    ps['my_score_game'] = 25
         else:
-            st.session_state.my_miss_game += 1
-            if st.session_state.my_miss_game >= 3:
-                st.session_state.my_total_score += st.session_state.my_score_game
-                st.session_state.my_score_game = 0
-                st.session_state.my_miss_game = 0
-                st.session_state.game_message = "😢 3回連続ミス！このゲーム終了...次のゲームへ"
+            ps['my_miss_game'] += 1
+            if ps['my_miss_game'] >= 3:
+                ps['my_total_score'] += ps['my_score_game']
+                ps['my_score_game'] = 0
+                ps['my_miss_game'] = 0
+                ps['game_message'] = "😢 3回連続ミス！このゲーム終了...次のゲームへ"
 
         for k in st.session_state.obstacles:
             st.session_state.obstacles[k] = False
