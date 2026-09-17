@@ -1016,8 +1016,6 @@ else:
             '<h1 style="font-size:28px; line-height:1.3;">🤖 AI戦術提示<br>シミュレーター</h1>',
             unsafe_allow_html=True,
         )
-        st.caption("試合状況と全スキットルの配置から、モンテカルロシミュレーションで勝利確率を計算します。")
-
         # 自分のスコア入力
         st.write("**自分**")
         col1, col2 = st.columns(2)
