@@ -1563,8 +1563,9 @@ function beginDragFromPalette(n, cx, cy) {{
   createCourtPin(n);
   pinEls[n].style.left = cx + 'px';
   pinEls[n].style.top  = cy + 'px';
+  pinEls[n].style.transform = 'translate(-50%,-50%)';
   pinEls[n].classList.add('dragging');
-  drag = {{n, el: pinEls[n]}};
+  drag = {{n, el: pinEls[n], startX: cx, startY: cy}};
 }}
 
 function onPalTouchStart(e) {{
@@ -1581,8 +1582,9 @@ function beginDragFromCourt(n, cx, cy) {{
   createCourtPin(n);
   pinEls[n].style.left = cx + 'px';
   pinEls[n].style.top  = cy + 'px';
+  pinEls[n].style.transform = 'translate(-50%,-50%)';
   pinEls[n].classList.add('dragging');
-  drag = {{n, el: pinEls[n]}};
+  drag = {{n, el: pinEls[n], startX: cx, startY: cy}};
 }}
 
 function onCourtTouchStart(e) {{
@@ -1597,8 +1599,9 @@ function onCourtMouseDown(e) {{
 
 function onMove(cx, cy) {{
   if (!drag) return;
-  drag.el.style.left = cx + 'px';
-  drag.el.style.top  = cy + 'px';
+  const dx = cx - drag.startX;
+  const dy = cy - drag.startY;
+  drag.el.style.transform = 'translate(-50%,-50%) translate(' + dx + 'px,' + dy + 'px)';
 }}
 document.addEventListener('touchmove', e => {{
   if (drag) {{ e.preventDefault(); onMove(e.touches[0].clientX, e.touches[0].clientY); }}
@@ -1610,6 +1613,7 @@ function onEnd(cx, cy) {{
   const {{n, el}} = drag;
   drag = null;
   el.classList.remove('dragging');
+  el.style.transform = 'translate(-50%,-50%)';
 
   const svgPt = screenToSvgPt(cx, cy);
   const mPt   = svgToM(svgPt.x, svgPt.y);
