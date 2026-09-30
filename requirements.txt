@@ -1,5 +1,5 @@
 streamlit-drawable-canvas==0.9.3
 pandas
-sqlalchemy
+sqlalchemy==2.0.52
 psycopg2-binary
 altair
