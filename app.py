@@ -13,6 +13,9 @@ db_conn = st.connection("sql", type="sql")
 _SWIPE_HISTORY_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend_components", "swipe_history")
 _swipe_history_component = components.declare_component("swipe_history", path=_SWIPE_HISTORY_DIR)
 
+_FULLSCREEN_COURT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend_components", "fullscreen_court")
+_fullscreen_court_component = components.declare_component("fullscreen_court", path=_FULLSCREEN_COURT_DIR)
+
 # --- 1. データベース準備 ---
 @st.cache_resource
 def init_db():
@@ -989,29 +992,6 @@ if page == "🎯 投擲データ記録":
 # ==========================================
 else:
     # -------------------------------------------------------
-    # 全画面モードから戻った時に座標を受け取る
-    # -------------------------------------------------------
-    raw_coords = st.query_params.get("coords", None)
-    if raw_coords:
-        import json, urllib.parse
-        try:
-            decoded = urllib.parse.unquote(raw_coords)
-            parsed = json.loads(decoded)
-            new_coords = {num: None for num in range(1, 13)}
-            for item in parsed:
-                n = item["n"]
-                if 1 <= n <= 12:
-                    new_coords[n] = (item["x"], item["y"])
-            st.session_state.skittle_m_coords = new_coords
-        except Exception:
-            pass
-        st.query_params.clear()
-        st.session_state.fullscreen = False
-        st.session_state['_page'] = "🤖 AI戦術提示シミュレーター"
-        st.session_state['canvas_version'] = st.session_state.get('canvas_version', 0) + 1 
-        st.rerun()
-
-    # -------------------------------------------------------
     # 通常モード UI
     # -------------------------------------------------------
     if not st.session_state.fullscreen:
@@ -1240,433 +1220,16 @@ else:
                         )
                         st.caption(active_str)
     # -------------------------------------------------------
-    # 全画面モード：components.html で完全な HTML/JS アプリ
+    # 全画面モード：declare_component で postMessage 経由のやりとり
     # スライドアウトパレット（右エッジ）＋ ドラッグ&ドロップ
     # -------------------------------------------------------
     else:
-        import json as _json
-
-        # 現在の座標をJSに渡す
+        # 現在の座標をコンポーネントの初期値として渡す
         init_coords = []
         for num in range(1, 13):
             c = st.session_state.skittle_m_coords[num]
             if c:
                 init_coords.append({"n": num, "x": c[0], "y": c[1]})
-
-        init_coords_json = _json.dumps(init_coords)
-
-        # ── コート SVG の設計 ──────────────────────────
-        # viewBox: 幅480 × 高さ1080
-        # コート実寸 4m×10m を SVG単位で表現:
-        #   幅方向: 左余白60 + コート幅360(=4m×90) + 右余白60 = 480
-        #   高さ方向: 上余白40 + コート高さ1000(=10m×100) + 下余白40 = 1080
-        # SVG座標原点 (0,0) = 左上
-        # コート左端 x=60、右端 x=420、中心 x=240
-        # コート上端 y=40(=10m地点)、下端 y=1040(=0m地点)
-        # メートル→SVG変換:
-        #   svg_x = 240 + mx * 90        (mx: 中心からの距離、左=-2〜右=+2)
-        #   svg_y = 1040 - my * 100      (my: 手前からの距離 0〜10m)
-        # 投擲ライン: my=3.5m → svg_y = 1040 - 350 = 690
-
-        fullscreen_html = f"""<!DOCTYPE html>
-<html>
-<head>
-<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
-<style>
-*{{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}}
-html,body{{width:100%;height:100%;overflow:hidden;background:#f8fafc;touch-action:none;font-family:sans-serif;}}
-
-/* ── コートSVG：画面全体に広げる ── */
-#court-svg{{
-  position:fixed;inset:0;
-  width:100%;height:100%;
-  display:block;
-}}
-
-/* ── ピン層（絶対座標で浮遊） ── */
-#pin-layer{{
-  position:fixed;inset:0;
-  pointer-events:none;
-  z-index:50;
-}}
-#pin-layer .court-pin{{pointer-events:auto;}}
-
-/* ── コート上ピン ── */
-.court-pin{{
-  position:absolute;
-  font-size:14px;line-height:1;
-  transform:translate(-50%,-50%);
-  cursor:grab;user-select:none;
-  filter:drop-shadow(0 1px 2px rgba(0,0,0,.4));
-  touch-action:none;
-  z-index:50;
-  transition:filter .1s;
-}}
-.court-pin.dragging{{
-  filter:drop-shadow(0 4px 8px rgba(0,0,0,.55));
-  font-size:18px;
-  z-index:200;
-}}
-
-/* ── 上部バー ── */
-#top-bar{{
-  position:fixed;top:0;left:0;right:0;height:48px;
-  padding:0 14px;z-index:300;
-  display:flex;align-items:center;justify-content:space-between;
-  background:rgba(248,250,252,.92);backdrop-filter:blur(8px);
-  border-bottom:1px solid #e2e8f0;
-}}
-#pin-count{{font-size:13px;color:#64748b;}}
-#exit-btn{{
-  height:34px;padding:0 16px;border:none;border-radius:7px;
-  background:#ef4444;color:#fff;font-size:13px;font-weight:600;cursor:pointer;
-}}
-#exit-btn:active{{background:#dc2626;}}
-
-/* ── エッジタブ（右端中央） ── */
-#palette-tab{{
-  position:fixed;right:0;top:50%;transform:translateY(-50%);
-  width:30px;height:88px;
-  background:#1e293b;border-radius:10px 0 0 10px;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
-  cursor:pointer;z-index:310;
-  box-shadow:-3px 0 10px rgba(0,0,0,.25);
-  transition:background .15s,right .28s cubic-bezier(.4,0,.2,1);
-}}
-#palette-tab:active{{background:#0f172a;}}
-#palette-tab .arrow{{
-  width:0;height:0;
-  border-top:5px solid transparent;border-bottom:5px solid transparent;
-  border-right:7px solid #94a3b8;
-  transition:transform .28s;
-}}
-#palette-tab.open .arrow{{transform:rotate(180deg);}}
-#palette-tab .tab-label{{
-  font-size:9px;color:#64748b;letter-spacing:.5px;writing-mode:vertical-rl;
-  margin-top:4px;
-}}
-
-/* ── スライドアウトパレット ── */
-#palette{{
-  position:fixed;top:0;right:-220px;width:220px;height:100%;
-  background:#1e293b;border-left:1.5px solid #334155;
-  z-index:300;
-  transition:right .28s cubic-bezier(.4,0,.2,1);
-  display:flex;flex-direction:column;
-  padding-top:48px;
-}}
-#palette.open{{right:0;}}
-#palette.open ~ #palette-tab{{right:220px;}}
-
-#palette-header{{
-  padding:12px 12px 8px;
-  display:flex;align-items:center;justify-content:space-between;
-  border-bottom:1px solid #334155;flex-shrink:0;
-}}
-#palette-header span{{font-size:12px;color:#94a3b8;letter-spacing:.5px;}}
-#palette-close{{
-  width:26px;height:26px;border:none;background:rgba(255,255,255,.07);
-  border-radius:6px;color:#64748b;font-size:15px;cursor:pointer;
-  display:flex;align-items:center;justify-content:center;
-}}
-
-#palette-grid{{
-  flex:1;overflow-y:auto;padding:10px 8px;
-  display:grid;grid-template-columns:1fr 1fr;gap:8px;align-content:start;
-}}
-
-.pal-pin{{
-  aspect-ratio:1;
-  background:rgba(255,255,255,.15);
-  border:1.5px solid #64748b;border-radius:12px;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:2px;
-  font-size:28px;cursor:grab;user-select:none;
-  touch-action:none;
-  transition:background .15s,border-color .15s,opacity .15s;
-}}
-.pal-pin .pal-label{{font-size:10px;color:#94a3b8;}}
-.pal-pin:active{{cursor:grabbing;background:rgba(255,255,255,.12);}}
-.pal-pin.on-court{{
-  background:rgba(239,68,68,.1);
-  border-color:rgba(239,68,68,.5);
-  opacity:.6;
-}}
-</style>
-</head>
-<body>
-
-<!-- 上部バー -->
-<div id="top-bar">
-  <span id="pin-count">0 / 12 本配置</span>
-  <button id="exit-btn">✕ 保存して終了</button>
-</div>
-
-<!-- コートSVG -->
-<svg id="court-svg" viewBox="0 0 480 1080"
-     preserveAspectRatio="xMidYMid meet"
-     xmlns="http://www.w3.org/2000/svg">
-  <!-- 背景 -->
-  <rect width="480" height="1080" fill="#f8fafc"/>
-  <!-- コート本体 -->
-  <rect x="60" y="40" width="360" height="1000"
-        fill="rgba(34,197,94,.04)" stroke="#475569" stroke-width="3" rx="2"/>
-  <!-- センターライン -->
-  <line x1="240" y1="40" x2="240" y2="1040"
-        stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="10,7"/>
-  <!-- 投擲ライン 3.5m (svg_y=690) -->
-  <line x1="60" y1="690" x2="420" y2="690"
-        stroke="#f59e0b" stroke-width="2.5"/>
-  <text x="240" y="676" text-anchor="middle"
-        font-size="18" fill="#f59e0b" font-family="sans-serif">投擲ライン 3.5m</text>
-  <!-- 距離目盛り（左端） -->
-  <text x="48" y="1044" text-anchor="end" font-size="16" fill="#94a3b8" font-family="sans-serif"> 0m</text>
-  <text x="48" y="944"  text-anchor="end" font-size="16" fill="#94a3b8" font-family="sans-serif"> 1m</text>
-  <text x="48" y="844"  text-anchor="end" font-size="16" fill="#94a3b8" font-family="sans-serif"> 2m</text>
-  <text x="48" y="744"  text-anchor="end" font-size="16" fill="#94a3b8" font-family="sans-serif"> 3m</text>
-  <text x="48" y="644"  text-anchor="end" font-size="16" fill="#94a3b8" font-family="sans-serif"> 4m</text>
-  <text x="48" y="544"  text-anchor="end" font-size="16" fill="#94a3b8" font-family="sans-serif"> 5m</text>
-  <text x="48" y="444"  text-anchor="end" font-size="16" fill="#94a3b8" font-family="sans-serif"> 6m</text>
-  <text x="48" y="344"  text-anchor="end" font-size="16" fill="#94a3b8" font-family="sans-serif"> 7m</text>
-  <text x="48" y="244"  text-anchor="end" font-size="16" fill="#94a3b8" font-family="sans-serif"> 8m</text>
-  <text x="48" y="144"  text-anchor="end" font-size="16" fill="#94a3b8" font-family="sans-serif"> 9m</text>
-  <text x="48" y="50"   text-anchor="end" font-size="16" fill="#94a3b8" font-family="sans-serif">10m</text>
-  <!-- 目盛り横線（補助線） -->
-  <line x1="58" y1="1040" x2="62" y2="1040" stroke="#94a3b8" stroke-width="1"/>
-  <line x1="58" y1="940"  x2="62" y2="940"  stroke="#94a3b8" stroke-width="1"/>
-  <line x1="58" y1="840"  x2="62" y2="840"  stroke="#94a3b8" stroke-width="1"/>
-  <line x1="58" y1="740"  x2="62" y2="740"  stroke="#94a3b8" stroke-width="1"/>
-  <line x1="58" y1="640"  x2="62" y2="640"  stroke="#94a3b8" stroke-width="1"/>
-  <line x1="58" y1="540"  x2="62" y2="540"  stroke="#94a3b8" stroke-width="1"/>
-  <line x1="58" y1="440"  x2="62" y2="440"  stroke="#94a3b8" stroke-width="1"/>
-  <line x1="58" y1="340"  x2="62" y2="340"  stroke="#94a3b8" stroke-width="1"/>
-  <line x1="58" y1="240"  x2="62" y2="240"  stroke="#94a3b8" stroke-width="1"/>
-  <line x1="58" y1="140"  x2="62" y2="140"  stroke="#94a3b8" stroke-width="1"/>
-  <line x1="58" y1="40"   x2="62" y2="40"   stroke="#94a3b8" stroke-width="1"/>
-</svg>
-
-<!-- ピン層 -->
-<div id="pin-layer"></div>
-
-<!-- エッジタブ -->
-<div id="palette-tab" onclick="togglePalette()">
-  <div class="arrow"></div>
-  <span class="tab-label">ピン</span>
-</div>
-
-<!-- スライドアウトパレット -->
-<div id="palette">
-  <div id="palette-header">
-    <span>スキットル一覧</span>
-    <button id="palette-close" onclick="togglePalette()">✕</button>
-  </div>
-  <div id="palette-grid"></div>
-</div>
-
-<script>
-const EMOJI = {{"1":"①","2":"②","3":"③","4":"④","5":"⑤","6":"⑥",
-               "7":"⑦","8":"⑧","9":"⑨","10":"⑩","11":"⑪","12":"⑫"}};
-
-function mToSvg(mx, my) {{
-  return {{ x: 240 + mx * 90, y: 1040 - my * 100 }};
-}}
-function svgToM(sx, sy) {{
-  const rx_m = (sx - 240) / 90;
-  const ry_m = (1040 - sy) / 100;
-  return {{
-    x: Math.round(rx_m / 0.2) * 0.2,
-    y: Math.round(ry_m / 0.2) * 0.2
-  }};
-}}
-
-function svgPtToScreen(svgX, svgY) {{
-  const svg = document.getElementById('court-svg');
-  const pt = svg.createSVGPoint();
-  pt.x = svgX; pt.y = svgY;
-  const m = svg.getScreenCTM();
-  return {{ x: pt.x * m.a + m.e, y: pt.y * m.d + m.f }};
-}}
-function screenToSvgPt(cx, cy) {{
-  const svg = document.getElementById('court-svg');
-  const pt = svg.createSVGPoint();
-  pt.x = cx; pt.y = cy;
-  return pt.matrixTransform(svg.getScreenCTM().inverse());
-}}
-
-const coords = {{}};
-for (let n = 1; n <= 12; n++) coords[n] = null;
-
-const initData = {init_coords_json};
-initData.forEach(d => {{ coords[d.n] = {{x: d.x, y: d.y}}; }});
-
-const grid = document.getElementById('palette-grid');
-for (let n = 1; n <= 12; n++) {{
-  const el = document.createElement('div');
-  el.className = 'pal-pin' + (coords[n] ? ' on-court' : '');
-  el.id = 'pal-' + n;
-  el.innerHTML = `<span>${{EMOJI[n]}}</span>`;
-  el.dataset.n = n;
-  el.addEventListener('touchstart', onPalTouchStart, {{passive: false}});
-  el.addEventListener('mousedown',  onPalMouseDown);
-  grid.appendChild(el);
-}}
-
-const pinLayer = document.getElementById('pin-layer');
-const pinEls = {{}};
-
-function createCourtPin(n) {{
-  if (pinEls[n]) return;
-  const el = document.createElement('div');
-  el.className = 'court-pin';
-  el.id = 'pin-' + n;
-  el.textContent = EMOJI[n];
-  el.dataset.n = n;
-  el.addEventListener('touchstart', onCourtTouchStart, {{passive: false}});
-  el.addEventListener('mousedown',  onCourtMouseDown);
-  pinLayer.appendChild(el);
-  pinEls[n] = el;
-}}
-
-function destroyCourtPin(n) {{
-  if (pinEls[n]) {{ pinEls[n].remove(); delete pinEls[n]; }}
-}}
-
-function positionCourtPin(n) {{
-  if (!coords[n] || !pinEls[n]) return;
-  const sv = mToSvg(coords[n].x, coords[n].y);
-  const sc = svgPtToScreen(sv.x, sv.y);
-  pinEls[n].style.left = sc.x + 'px';
-  pinEls[n].style.top  = sc.y + 'px';
-}}
-
-for (let n = 1; n <= 12; n++) {{
-  if (coords[n]) {{
-    createCourtPin(n);
-    positionCourtPin(n);
-  }}
-}}
-updateCount();
-
-window.addEventListener('resize', () => {{
-  for (let n = 1; n <= 12; n++) {{
-    if (coords[n]) positionCourtPin(n);
-  }}
-}});
-
-let drag = null;
-
-function beginDragFromPalette(n, cx, cy) {{
-  if (coords[n]) {{
-    beginDragFromCourt(n, cx, cy);
-    return;
-  }}
-  createCourtPin(n);
-  pinEls[n].style.left = cx + 'px';
-  pinEls[n].style.top  = cy + 'px';
-  pinEls[n].style.transform = 'translate(-50%,-50%)';
-  pinEls[n].classList.add('dragging');
-  drag = {{n, el: pinEls[n], startX: cx, startY: cy}};
-}}
-
-function onPalTouchStart(e) {{
-  e.preventDefault();
-  const t = e.touches[0];
-  beginDragFromPalette(+this.dataset.n, t.clientX, t.clientY);
-}}
-function onPalMouseDown(e) {{
-  e.preventDefault();
-  beginDragFromPalette(+this.dataset.n, e.clientX, e.clientY);
-}}
-
-function beginDragFromCourt(n, cx, cy) {{
-  createCourtPin(n);
-  pinEls[n].style.left = cx + 'px';
-  pinEls[n].style.top  = cy + 'px';
-  pinEls[n].style.transform = 'translate(-50%,-50%)';
-  pinEls[n].classList.add('dragging');
-  drag = {{n, el: pinEls[n], startX: cx, startY: cy}};
-}}
-
-function onCourtTouchStart(e) {{
-  e.preventDefault();
-  const t = e.touches[0];
-  beginDragFromCourt(+this.dataset.n, t.clientX, t.clientY);
-}}
-function onCourtMouseDown(e) {{
-  e.preventDefault();
-  beginDragFromCourt(+this.dataset.n, e.clientX, e.clientY);
-}}
-
-function onMove(cx, cy) {{
-  if (!drag) return;
-  const dx = cx - drag.startX;
-  const dy = cy - drag.startY;
-  drag.el.style.transform = 'translate(-50%,-50%) translate(' + dx + 'px,' + dy + 'px)';
-}}
-document.addEventListener('touchmove', e => {{
-  if (drag) {{ e.preventDefault(); onMove(e.touches[0].clientX, e.touches[0].clientY); }}
-}}, {{passive: false}});
-document.addEventListener('mousemove', e => {{ if (drag) onMove(e.clientX, e.clientY); }});
-
-function onEnd(cx, cy) {{
-  if (!drag) return;
-  const {{n, el}} = drag;
-  drag = null;
-  el.classList.remove('dragging');
-  el.style.transform = 'translate(-50%,-50%)';
-
-  const svgPt = screenToSvgPt(cx, cy);
-  const mPt   = svgToM(svgPt.x, svgPt.y);
-
-  const inCourt = mPt.x >= -2 && mPt.x <= 2 && mPt.y > 0 && mPt.y <= 10;
-  const pal = document.getElementById('palette');
-  const paletteOpen = pal.classList.contains('open');
-  const inPaletteArea = paletteOpen && cx > window.innerWidth - 230;
-
-  if (!inCourt || inPaletteArea) {{
-    coords[n] = null;
-    destroyCourtPin(n);
-    document.getElementById('pal-' + n).classList.remove('on-court');
-  }} else {{
-    coords[n] = mPt;
-    const sv = mToSvg(mPt.x, mPt.y);
-    const sc = svgPtToScreen(sv.x, sv.y);
-    el.style.left = sc.x + 'px';
-    el.style.top  = sc.y + 'px';
-    document.getElementById('pal-' + n).classList.add('on-court');
-  }}
-  updateCount();
-}}
-
-document.addEventListener('touchend',
-  e => {{ if (drag) onEnd(e.changedTouches[0].clientX, e.changedTouches[0].clientY); }});
-document.addEventListener('mouseup',
-  e => {{ if (drag) onEnd(e.clientX, e.clientY); }});
-
-let paletteOpen = false;
-function togglePalette() {{
-  paletteOpen = !paletteOpen;
-  document.getElementById('palette').classList.toggle('open', paletteOpen);
-  document.getElementById('palette-tab').classList.toggle('open', paletteOpen);
-}}
-
-function updateCount() {{
-  const cnt = Object.values(coords).filter(Boolean).length;
-  document.getElementById('pin-count').textContent = cnt + ' / 12 本配置';
-}}
-
-document.getElementById('exit-btn').addEventListener('click', () => {{
-  const result = [];
-  for (let n = 1; n <= 12; n++) {{
-    if (coords[n]) result.push({{n, x: coords[n].x, y: coords[n].y}});
-  }}
-  const encoded = encodeURIComponent(JSON.stringify(result));
-  window.location.href = '/?coords=' + encoded + '&page=sim';
-
-}});
-</script>
-</body>
-</html>"""
 
         st.markdown("""
         <style>
@@ -1690,4 +1253,23 @@ document.getElementById('exit-btn').addEventListener('click', () => {{
         </style>
         """, unsafe_allow_html=True)
 
-        components.html(fullscreen_html, height=900, scrolling=False)
+        if 'fullscreen_court_nonce' not in st.session_state:
+            st.session_state.fullscreen_court_nonce = 0
+
+        exit_result = _fullscreen_court_component(
+            coords=init_coords,
+            key=f"fullscreen_court_{st.session_state.fullscreen_court_nonce}",
+        )
+
+        if exit_result is not None:
+            new_coords = {num: None for num in range(1, 13)}
+            for item in exit_result:
+                n = item["n"]
+                if 1 <= n <= 12:
+                    new_coords[n] = (item["x"], item["y"])
+            st.session_state.skittle_m_coords = new_coords
+            st.session_state.fullscreen = False
+            st.session_state['_page'] = "🤖 AI戦術提示シミュレーター"
+            st.session_state['canvas_version'] = st.session_state.get('canvas_version', 0) + 1
+            st.session_state.fullscreen_court_nonce += 1
+            st.rerun()
