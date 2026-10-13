@@ -16,6 +16,9 @@ _swipe_history_component = components.declare_component("swipe_history", path=_S
 _FULLSCREEN_COURT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend_components", "fullscreen_court")
 _fullscreen_court_component = components.declare_component("fullscreen_court", path=_FULLSCREEN_COURT_DIR)
 
+_PLAYER_STORAGE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend_components", "player_storage")
+_player_storage_component = components.declare_component("player_storage", path=_PLAYER_STORAGE_DIR)
+
 # --- 1. データベース準備 ---
 @st.cache_resource
 def init_db():
@@ -404,6 +407,23 @@ def run_simulation(
 # --- ログイン画面 ---
 if 'current_player' not in st.session_state:
     st.session_state.current_player = None
+    st.session_state.player_restore_checked = False
+    st.session_state.player_saved_to_storage = False
+
+# アプリ切り替え等でセッションが切れた場合、ブラウザのlocalStorageから
+# 前回ログインしていたプレイヤーを自動復元する（URLと違い他人とは共有されない）
+if st.session_state.current_player is None and not st.session_state.player_restore_checked:
+    _restored_player = _player_storage_component(action="load", key="player_restore")
+    if _restored_player is not None:
+        st.session_state.player_restore_checked = True
+        if _restored_player:
+            _match = db_conn.query(
+                "SELECT name FROM players WHERE name = :name",
+                params={"name": _restored_player}, ttl=0
+            )
+            if not _match.empty:
+                st.session_state.current_player = _restored_player
+        st.rerun()
 
 if st.session_state.current_player is None:
     st.markdown("""
@@ -538,6 +558,13 @@ if st.session_state.current_player is None:
 
     st.stop()
 
+if not st.session_state.player_saved_to_storage:
+    _player_storage_component(
+        action="save", player=st.session_state.current_player,
+        key=f"player_save_{st.session_state.current_player}",
+    )
+    st.session_state.player_saved_to_storage = True
+
 # --- メニュー ---
 if st.query_params.get("page") == "sim":
     st.session_state['_page'] = "🤖 AI戦術提示シミュレーター"
@@ -548,6 +575,7 @@ with col_player:
 with col_switch:
     if st.button("切替", use_container_width=True):
         st.session_state.current_player = None
+        st.session_state.player_saved_to_storage = False
         st.rerun()
 
 page = st.radio(
