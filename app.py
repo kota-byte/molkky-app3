@@ -663,6 +663,11 @@ if "skittle_m_coords" not in st.session_state:
 if "opponents" not in st.session_state:
     st.session_state.opponents = [{"score": 0, "miss": 0}]  # デフォルト1人
 
+if "sim_my_score_val" not in st.session_state:
+    st.session_state.sim_my_score_val = 0
+if "sim_my_miss_val" not in st.session_state:
+    st.session_state.sim_my_miss_val = 0
+
 if 'player_game_state' not in st.session_state:
     st.session_state.player_game_state = {}
 
@@ -1032,9 +1037,14 @@ else:
         st.write("**自分**")
         col1, col2 = st.columns(2)
         with col1:
-            my_score = st.slider("自分の現在の得点", 0, 50, 0, key="my_score")
+            my_score = st.slider(
+                "自分の現在の得点", 0, 50, st.session_state.sim_my_score_val, key="my_score")
+            st.session_state.sim_my_score_val = my_score
         with col2:
-            my_miss = st.radio("自分の連続ミス回数", [0, 1, 2], horizontal=True, key="sim_my_miss")
+            my_miss = st.radio(
+                "自分の連続ミス回数", [0, 1, 2], horizontal=True,
+                index=st.session_state.sim_my_miss_val, key="sim_my_miss")
+            st.session_state.sim_my_miss_val = my_miss
 
         st.write("---")
 
