@@ -942,7 +942,7 @@ if page == "🎯 投擲データ記録":
         for k in st.session_state.obstacles:
             st.session_state.obstacles[k] = False
         st.cache_data.clear()
-        st.success("データを保存しました！")
+        st.toast("データを保存しました！", icon="✅")
         st.rerun()
 
     st.subheader("📊 距離別の成功率実績")
