@@ -30,13 +30,14 @@ html,body{width:100%;height:100%;overflow:hidden;background:#f8fafc;touch-action
   transform:translate(-50%,-50%);
   cursor:grab;user-select:none;-webkit-user-select:none;
   -webkit-touch-callout:none;-webkit-user-drag:none;
-  filter:drop-shadow(0 1px 2px rgba(0,0,0,.4));
+  text-shadow:0 1px 2px rgba(0,0,0,.4);
   touch-action:none;
   z-index:50;
-  transition:filter .1s;
+  will-change:transform;
+  transition:text-shadow .1s;
 }
 .court-pin.dragging{
-  filter:drop-shadow(0 4px 8px rgba(0,0,0,.55));
+  text-shadow:0 4px 8px rgba(0,0,0,.55);
   font-size:18px;
   z-index:200;
 }
@@ -324,7 +325,7 @@ function onMove(cx, cy) {
   if (!drag) return;
   const dx = cx - drag.startX;
   const dy = cy - drag.startY;
-  drag.el.style.transform = 'translate(-50%,-50%) translate(' + dx + 'px,' + dy + 'px)';
+  drag.el.style.transform = 'translate(-50%,-50%) translate3d(' + dx + 'px,' + dy + 'px,0)';
 }
 document.addEventListener('touchmove', e => {
   if (drag) { e.preventDefault(); onMove(e.touches[0].clientX, e.touches[0].clientY); }
