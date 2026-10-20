@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import streamlit as st
 import pandas as pd
@@ -65,9 +66,15 @@ MATCH_LOG_COLUMNS = [
     "3連続ミスによる敗北", "総投擲数", "タイムスタンプ",
 ]
 
+def _gsheets_log_error(context, e):
+    import traceback
+    print(f"[gsheets] {context} failed: {e}", file=sys.stderr)
+    traceback.print_exc(file=sys.stderr)
+
 @st.cache_resource
 def _gsheets_client():
     if "gcp_service_account" not in st.secrets:
+        print("[gsheets] gcp_service_account not found in st.secrets", file=sys.stderr)
         return None
     try:
         creds = Credentials.from_service_account_info(
@@ -75,13 +82,17 @@ def _gsheets_client():
             scopes=["https://www.googleapis.com/auth/spreadsheets"],
         )
         return gspread.authorize(creds)
-    except Exception:
+    except Exception as e:
+        _gsheets_log_error("authorize", e)
         return None
 
 @st.cache_resource
 def _gsheets_worksheet(sheet_name, columns):
     client = _gsheets_client()
-    if client is None or "gsheets" not in st.secrets:
+    if client is None:
+        return None
+    if "gsheets" not in st.secrets:
+        print("[gsheets] gsheets not found in st.secrets", file=sys.stderr)
         return None
     try:
         sh = client.open_by_key(st.secrets["gsheets"]["sheet_id"])
@@ -89,7 +100,8 @@ def _gsheets_worksheet(sheet_name, columns):
         if not ws.row_values(1):
             ws.append_row(columns, value_input_option="USER_ENTERED")
         return ws
-    except Exception:
+    except Exception as e:
+        _gsheets_log_error(f"open worksheet {sheet_name}", e)
         return None
 
 def append_throw_log(row: dict):
@@ -99,8 +111,8 @@ def append_throw_log(row: dict):
         return
     try:
         ws.append_row([row.get(c, "") for c in THROW_LOG_COLUMNS], value_input_option="USER_ENTERED")
-    except Exception:
-        pass
+    except Exception as e:
+        _gsheets_log_error("append throw_logs row", e)
 
 def append_match_log(row: dict):
     """1試合分のデータをGoogle Sheetsのmatch_logsシートに追記する"""
@@ -109,8 +121,8 @@ def append_match_log(row: dict):
         return
     try:
         ws.append_row([row.get(c, "") for c in MATCH_LOG_COLUMNS], value_input_option="USER_ENTERED")
-    except Exception:
-        pass
+    except Exception as e:
+        _gsheets_log_error("append match_logs row", e)
 
 import math
 import random
