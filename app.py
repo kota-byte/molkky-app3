@@ -1,10 +1,13 @@
 import os
+import json
 import streamlit as st
 import pandas as pd
 from datetime import datetime
 from sqlalchemy import text
 from streamlit_drawable_canvas import st_canvas
 import streamlit.components.v1 as components
+import gspread
+from google.oauth2.service_account import Credentials
 
 st.set_page_config(page_title="モルック戦術支援アプリ", layout="centered")
 
@@ -42,6 +45,72 @@ def init_db():
         s.commit()
 
 init_db()
+
+# --- 2. Google Sheets連携（実験データ収集用） ---
+# secrets.toml に [gcp_service_account] と [gsheets] が未設定の場合は
+# サイレントに無効化され、アプリ本体の動作には影響しない。
+THROW_LOG_COLUMNS = [
+    "ユーザーID", "試合番号", "条件", "何投目か",
+    "自分の得点（投擲前）", "相手の得点（投擲前）",
+    "自分の連続ミス回数（投擲前）", "相手の連続ミス回数（投擲前）",
+    "AI1位スキットル番号", "AI1位勝率",
+    "AI2位スキットル番号", "AI2位勝率",
+    "AI3位スキットル番号", "AI3位勝率",
+    "実際に選んだスキットル番号", "投擲結果", "倒れたスキットル番号",
+    "スキットル配置", "タイムスタンプ",
+]
+MATCH_LOG_COLUMNS = [
+    "ユーザーID", "試合番号", "条件", "勝敗",
+    "25点戻り回数（自分）", "25点戻り回数（相手）",
+    "3連続ミスによる敗北", "総投擲数", "タイムスタンプ",
+]
+
+@st.cache_resource
+def _gsheets_client():
+    if "gcp_service_account" not in st.secrets:
+        return None
+    try:
+        creds = Credentials.from_service_account_info(
+            dict(st.secrets["gcp_service_account"]),
+            scopes=["https://www.googleapis.com/auth/spreadsheets"],
+        )
+        return gspread.authorize(creds)
+    except Exception:
+        return None
+
+@st.cache_resource
+def _gsheets_worksheet(sheet_name, columns):
+    client = _gsheets_client()
+    if client is None or "gsheets" not in st.secrets:
+        return None
+    try:
+        sh = client.open_by_key(st.secrets["gsheets"]["sheet_id"])
+        ws = sh.worksheet(sheet_name)
+        if not ws.row_values(1):
+            ws.append_row(columns, value_input_option="USER_ENTERED")
+        return ws
+    except Exception:
+        return None
+
+def append_throw_log(row: dict):
+    """1投擲分のデータをGoogle Sheetsのthrow_logsシートに追記する"""
+    ws = _gsheets_worksheet("throw_logs", THROW_LOG_COLUMNS)
+    if ws is None:
+        return
+    try:
+        ws.append_row([row.get(c, "") for c in THROW_LOG_COLUMNS], value_input_option="USER_ENTERED")
+    except Exception:
+        pass
+
+def append_match_log(row: dict):
+    """1試合分のデータをGoogle Sheetsのmatch_logsシートに追記する"""
+    ws = _gsheets_worksheet("match_logs", MATCH_LOG_COLUMNS)
+    if ws is None:
+        return
+    try:
+        ws.append_row([row.get(c, "") for c in MATCH_LOG_COLUMNS], value_input_option="USER_ENTERED")
+    except Exception:
+        pass
 
 import math
 import random
@@ -566,6 +635,20 @@ if not st.session_state.player_saved_to_storage:
     )
     st.session_state.player_saved_to_storage = True
 
+# --- 実験データ収集用の状態 ---
+if "experiment" not in st.session_state:
+    st.session_state.experiment = {
+        "match_number": 1,
+        "condition": "アプリあり",
+        "throw_count": 0,
+        "my_bounce_count": 0,
+        "opp_bounce_count": 0,
+        "opp_score_prev": 0,
+        "miss_loss": False,
+    }
+if "pending_throw_snapshot" not in st.session_state:
+    st.session_state.pending_throw_snapshot = {}
+
 # --- メニュー ---
 if st.query_params.get("page") == "sim":
     st.session_state['_page'] = "🤖 AI戦術提示シミュレーター"
@@ -580,6 +663,49 @@ with st.container(key="menu_switch_row"):
         index=1 if st.session_state.get('_page') == "🤖 AI戦術提示シミュレーター" else 0
     )
 st.session_state['_page'] = page
+
+@st.dialog("試合結果を記録")
+def _match_end_dialog():
+    exp = st.session_state.experiment
+    result = st.radio("勝敗", ["勝ち", "負け"], horizontal=True)
+    if st.button("記録する", type="primary", use_container_width=True):
+        append_match_log({
+            "ユーザーID": st.session_state.current_player,
+            "試合番号": exp["match_number"],
+            "条件": exp["condition"],
+            "勝敗": result,
+            "25点戻り回数（自分）": exp["my_bounce_count"],
+            "25点戻り回数（相手）": exp["opp_bounce_count"],
+            "3連続ミスによる敗北": "あり" if exp["miss_loss"] else "なし",
+            "総投擲数": exp["throw_count"],
+            "タイムスタンプ": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        })
+        st.session_state.experiment = {
+            "match_number": exp["match_number"] + 1,
+            "condition": exp["condition"],
+            "throw_count": 0,
+            "my_bounce_count": 0,
+            "opp_bounce_count": 0,
+            "opp_score_prev": 0,
+            "miss_loss": False,
+        }
+        st.session_state.pending_throw_snapshot = {}
+        st.toast("試合結果を記録しました！", icon="✅")
+        st.rerun()
+
+with st.container(key="experiment_panel"):
+    st.session_state.experiment["condition"] = st.radio(
+        "条件", ["アプリあり", "アプリなし"], horizontal=True,
+        index=0 if st.session_state.experiment["condition"] == "アプリあり" else 1,
+        key="exp_condition_radio",
+    )
+    col_match, col_end = st.columns([2, 1])
+    with col_match:
+        exp = st.session_state.experiment
+        st.caption(f"🏐 試合 {exp['match_number']} ／ 投擲 {exp['throw_count']}回目")
+    with col_end:
+        if st.button("🏁 試合終了", use_container_width=True):
+            _match_end_dialog()
 
 # スマホでの横スクロールを防ぐ（両画面共通）
 st.markdown("""
@@ -926,6 +1052,32 @@ if page == "🎯 投擲データ記録":
                       })
             s.commit()
 
+        # 実験ログ：AIシミュレーター画面で記録した投擲前スナップショットと今回の結果を合体してSheetsに追記
+        exp = st.session_state.experiment
+        exp['throw_count'] += 1
+        snapshot = st.session_state.pending_throw_snapshot
+        append_throw_log({
+            "ユーザーID": st.session_state.current_player,
+            "試合番号": exp["match_number"],
+            "条件": exp["condition"],
+            "何投目か": exp["throw_count"],
+            "自分の得点（投擲前）": snapshot.get("my_score", ""),
+            "相手の得点（投擲前）": snapshot.get("opp_score", ""),
+            "自分の連続ミス回数（投擲前）": snapshot.get("my_miss", ""),
+            "相手の連続ミス回数（投擲前）": snapshot.get("opp_miss", ""),
+            "AI1位スキットル番号": snapshot.get("ai_top1_num", ""),
+            "AI1位勝率": snapshot.get("ai_top1_prob", ""),
+            "AI2位スキットル番号": snapshot.get("ai_top2_num", ""),
+            "AI2位勝率": snapshot.get("ai_top2_prob", ""),
+            "AI3位スキットル番号": snapshot.get("ai_top3_num", ""),
+            "AI3位勝率": snapshot.get("ai_top3_prob", ""),
+            "実際に選んだスキットル番号": target_no,
+            "投擲結果": success_val,
+            "倒れたスキットル番号": hit_no if success_val == "得点あり失敗" and hit_no else "",
+            "スキットル配置": snapshot.get("skittle_coords_json", ""),
+            "タイムスタンプ": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        })
+
         # 得点計算
         if success_val == "成功":
             ps['my_score_game'] += target_no
@@ -937,6 +1089,7 @@ if page == "🎯 投擲データ記録":
                 ps['game_message'] = "🎉 50点ちょうど！このゲームクリア！次のゲームへ"
             elif ps['my_score_game'] > 50:
                 ps['my_score_game'] = 25
+                exp['my_bounce_count'] += 1
         elif success_val == "得点あり失敗":
             if hit_no:
                 ps['my_score_game'] += hit_no
@@ -948,6 +1101,7 @@ if page == "🎯 投擲データ記録":
                     ps['game_message'] = "🎉 50点ちょうど！このゲームクリア！次のゲームへ"
                 elif ps['my_score_game'] > 50:
                     ps['my_score_game'] = 25
+                    exp['my_bounce_count'] += 1
         elif success_val == "ガシャ（複数本倒れた）":
             if gasha_count:
                 ps['my_score_game'] += gasha_count
@@ -959,6 +1113,7 @@ if page == "🎯 投擲データ記録":
                     ps['game_message'] = "🎉 50点ちょうど！このゲームクリア！次のゲームへ"
                 elif ps['my_score_game'] > 50:
                     ps['my_score_game'] = 25
+                    exp['my_bounce_count'] += 1
         else:
             ps['my_miss_game'] += 1
             if ps['my_miss_game'] >= 3:
@@ -966,6 +1121,7 @@ if page == "🎯 投擲データ記録":
                 ps['my_score_game'] = 0
                 ps['my_miss_game'] = 0
                 ps['game_message'] = "😢 3回連続ミス！このゲーム終了...次のゲームへ"
+                exp['miss_loss'] = True
 
         for k in st.session_state.obstacles:
             st.session_state.obstacles[k] = False
@@ -1089,6 +1245,12 @@ else:
             with col1:
                 st.session_state.opponents[i]["score"] = st.slider(
                     f"相手{i+1}の得点", 0, 50, opp["score"], key=f"opp_score_{i}")
+                if i == 0:
+                    exp = st.session_state.experiment
+                    new_opp_score = st.session_state.opponents[0]["score"]
+                    if new_opp_score == 25 and exp["opp_score_prev"] > 25:
+                        exp["opp_bounce_count"] += 1
+                    exp["opp_score_prev"] = new_opp_score
             with col2:
                 st.session_state.opponents[i]["miss"] = st.radio(
                     f"相手{i+1}の連続ミス回数", [0, 1, 2], horizontal=True,
@@ -1240,57 +1402,90 @@ else:
             st.caption("ピンをドラッグして配置してください。")
 
         st.write("")
-        if st.button("🚀 勝利確率を計算する", type="primary", use_container_width=True):
-            df = load_data(st.session_state.current_player)
-            if df.empty:
-                st.warning("投擲データがありません。先にデータを記録してください。")
-            elif not any(v for v in st.session_state.skittle_m_coords.values()):
-                st.warning("スキットルが配置されていません。マップにピンを置いてください。")
+        exp_condition = st.session_state.experiment["condition"]
+        btn_label = "🚀 勝利確率を計算する" if exp_condition == "アプリあり" else "📸 この状態を記録する"
+        if st.button(btn_label, type="primary", use_container_width=True):
+            if exp_condition != "アプリあり":
+                # アプリなし条件：AI提案は計算・表示せず、投擲前の状態だけを記録しておく
+                st.session_state.pending_throw_snapshot = {
+                    "my_score": my_score, "opp_score": st.session_state.opponents[0]["score"],
+                    "my_miss": my_miss, "opp_miss": st.session_state.opponents[0]["miss"],
+                    "skittle_coords_json": json.dumps(
+                        {n: c for n, c in st.session_state.skittle_m_coords.items() if c}, ensure_ascii=False
+                    ),
+                    "ai_top1_num": "", "ai_top1_prob": "",
+                    "ai_top2_num": "", "ai_top2_prob": "",
+                    "ai_top3_num": "", "ai_top3_prob": "",
+                }
+                st.toast("この時点の状態を記録しました。", icon="📸")
             else:
-                with st.spinner("シミュレーション計算中..."):
-                    results = run_simulation(
-                        my_score=my_score,
-                        my_miss=my_miss,
-                        opponents=st.session_state.opponents,
-                        skittle_coords=st.session_state.skittle_m_coords,
-                        df=df,
-                        n_sim=2000
-                    )
-
-                st.write("各スキットルの成功率:")
-                active_tmp = {n: c for n, c in st.session_state.skittle_m_coords.items() if c}
-                for n, c in sorted(active_tmp.items()):
-                    obs = get_obstacle_flags(n, st.session_state.skittle_m_coords)
-                    d = round(c[1] / 0.5) * 0.5
-                    r = get_success_rate(d, obs, df)
-                    st.caption(f"{n}番: 距離{d}m, 成功率{r:.3f}")
-
-                if results:
-                    top3 = sorted(results.items(), key=lambda x: x[1], reverse=True)[:3]
-                    st.subheader("🏆 推奨スキットル TOP3")
-                    for rank, (num, prob) in enumerate(top3, 1):
-                        st.metric(
-                            label=f"{rank}位：{num}番スキットル",
-                            value=f"{prob*100:.1f}%",
-                            help=f"このスキットルを狙った場合の勝利確率"
+                df = load_data(st.session_state.current_player)
+                if df.empty:
+                    st.warning("投擲データがありません。先にデータを記録してください。")
+                elif not any(v for v in st.session_state.skittle_m_coords.values()):
+                    st.warning("スキットルが配置されていません。マップにピンを置いてください。")
+                else:
+                    with st.spinner("シミュレーション計算中..."):
+                        results = run_simulation(
+                            my_score=my_score,
+                            my_miss=my_miss,
+                            opponents=st.session_state.opponents,
+                            skittle_coords=st.session_state.skittle_m_coords,
+                            df=df,
+                            n_sim=2000
                         )
 
-                    # ↓座標変化のトレース表示（デバッグ用）
-                    st.write("---")
-                    st.write("🔍 1試行の座標変化（デバッグ用）:")
-                    trace_log = trace_one_simulation(
-                        top3[0][0], my_score, my_miss,
-                        st.session_state.opponents[0]["score"],
-                        st.session_state.opponents[0]["miss"],
-                        st.session_state.skittle_m_coords, df
-                    )
-                    for label, coords_snapshot, ms_val, os_val in trace_log:
-                        st.caption(f"**{label}** (自分{ms_val}点・相手{os_val}点)")
-                        active_str = ", ".join(
-                            f"{n}番({c[0]:.2f},{c[1]:.2f})"
-                            for n, c in sorted(coords_snapshot.items()) if c
+                    st.write("各スキットルの成功率:")
+                    active_tmp = {n: c for n, c in st.session_state.skittle_m_coords.items() if c}
+                    for n, c in sorted(active_tmp.items()):
+                        obs = get_obstacle_flags(n, st.session_state.skittle_m_coords)
+                        d = round(c[1] / 0.5) * 0.5
+                        r = get_success_rate(d, obs, df)
+                        st.caption(f"{n}番: 距離{d}m, 成功率{r:.3f}")
+
+                    top3 = sorted(results.items(), key=lambda x: x[1], reverse=True)[:3] if results else []
+
+                    snapshot = {
+                        "my_score": my_score, "opp_score": st.session_state.opponents[0]["score"],
+                        "my_miss": my_miss, "opp_miss": st.session_state.opponents[0]["miss"],
+                        "skittle_coords_json": json.dumps(
+                            {n: c for n, c in st.session_state.skittle_m_coords.items() if c}, ensure_ascii=False
+                        ),
+                    }
+                    for rank in range(3):
+                        if rank < len(top3):
+                            snapshot[f"ai_top{rank+1}_num"] = top3[rank][0]
+                            snapshot[f"ai_top{rank+1}_prob"] = round(top3[rank][1] * 100, 1)
+                        else:
+                            snapshot[f"ai_top{rank+1}_num"] = ""
+                            snapshot[f"ai_top{rank+1}_prob"] = ""
+                    st.session_state.pending_throw_snapshot = snapshot
+
+                    if results:
+                        st.subheader("🏆 推奨スキットル TOP3")
+                        for rank, (num, prob) in enumerate(top3, 1):
+                            st.metric(
+                                label=f"{rank}位：{num}番スキットル",
+                                value=f"{prob*100:.1f}%",
+                                help=f"このスキットルを狙った場合の勝利確率"
+                            )
+
+                        # ↓座標変化のトレース表示（デバッグ用）
+                        st.write("---")
+                        st.write("🔍 1試行の座標変化（デバッグ用）:")
+                        trace_log = trace_one_simulation(
+                            top3[0][0], my_score, my_miss,
+                            st.session_state.opponents[0]["score"],
+                            st.session_state.opponents[0]["miss"],
+                            st.session_state.skittle_m_coords, df
                         )
-                        st.caption(active_str)
+                        for label, coords_snapshot, ms_val, os_val in trace_log:
+                            st.caption(f"**{label}** (自分{ms_val}点・相手{os_val}点)")
+                            active_str = ", ".join(
+                                f"{n}番({c[0]:.2f},{c[1]:.2f})"
+                                for n, c in sorted(coords_snapshot.items()) if c
+                            )
+                            st.caption(active_str)
     # -------------------------------------------------------
     # 全画面モード：declare_component で postMessage 経由のやりとり
     # スライドアウトパレット（右エッジ）＋ ドラッグ&ドロップ

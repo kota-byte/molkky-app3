@@ -4,3 +4,5 @@ pandas
 sqlalchemy==2.0.52
 psycopg2-binary
 altair==6.2.2
+gspread==6.2.1
+google-auth==2.62.0
