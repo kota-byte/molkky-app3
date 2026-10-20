@@ -34,6 +34,7 @@ def init_db():
         for col in obstacle_cols:
             s.execute(text(f"ALTER TABLE throw_logs ADD COLUMN IF NOT EXISTS {col} INTEGER DEFAULT 0"))
         s.execute(text("ALTER TABLE throw_logs ADD COLUMN IF NOT EXISTS player TEXT"))
+        s.execute(text("ALTER TABLE throw_logs ADD COLUMN IF NOT EXISTS gasha_count INTEGER"))
 
         # 導入前の既存データ（プレイヤー未設定）は kota のデータとして移行
         s.execute(text("INSERT INTO players (name) VALUES ('kota') ON CONFLICT (name) DO NOTHING"))
@@ -881,21 +882,29 @@ if page == "🎯 投擲データ記録":
 
     st.divider()
 
-    success_val = st.radio("結果", ["成功", "得点あり失敗", "完全ミス"], horizontal=True)
+    success_val = st.radio(
+        "結果", ["成功", "得点あり失敗", "ガシャ（複数本倒れた）", "完全ミス"], horizontal=True)
     if success_val == "得点あり失敗":
         hit_no = st.selectbox("倒れたスキットル番号", list(range(1, 13)))
     else:
         hit_no = None
+    if success_val == "ガシャ（複数本倒れた）":
+        gasha_count = st.number_input("倒れた本数", min_value=2, max_value=12, value=2, step=1)
+    else:
+        gasha_count = None
 
     if st.button("記録を保存する", type="primary", use_container_width=True):
+        is_success_val = {
+            "成功": 1, "得点あり失敗": 2, "ガシャ（複数本倒れた）": 3, "完全ミス": 0
+        }[success_val]
         with db_conn.session as s:
             s.execute(text('''INSERT INTO throw_logs
-                         (dist, target_no, is_success, n, ne, e, se, s, sw, w, nw, player, timestamp)
-                         VALUES (:dist, :target_no, :is_success, :n, :ne, :e, :se, :s, :sw, :w, :nw, :player, :ts)'''),
+                         (dist, target_no, is_success, n, ne, e, se, s, sw, w, nw, player, timestamp, gasha_count)
+                         VALUES (:dist, :target_no, :is_success, :n, :ne, :e, :se, :s, :sw, :w, :nw, :player, :ts, :gasha_count)'''),
                       {
                           "dist": dist,
                           "target_no": target_no,
-                          "is_success": 1 if success_val == "成功" else (2 if success_val == "得点あり失敗" else 0),
+                          "is_success": is_success_val,
                           "n": int(st.session_state.obstacles['n']),
                           "ne": int(st.session_state.obstacles['ne']),
                           "e": int(st.session_state.obstacles['e']),
@@ -906,6 +915,7 @@ if page == "🎯 投擲データ記録":
                           "nw": int(st.session_state.obstacles['nw']),
                           "player": st.session_state.current_player,
                           "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                          "gasha_count": gasha_count,
                       })
             s.commit()
 
@@ -923,6 +933,17 @@ if page == "🎯 投擲データ記録":
         elif success_val == "得点あり失敗":
             if hit_no:
                 ps['my_score_game'] += hit_no
+                ps['my_miss_game'] = 0
+                if ps['my_score_game'] == 50:
+                    ps['my_total_score'] += 50
+                    ps['my_score_game'] = 0
+                    ps['my_miss_game'] = 0
+                    ps['game_message'] = "🎉 50点ちょうど！このゲームクリア！次のゲームへ"
+                elif ps['my_score_game'] > 50:
+                    ps['my_score_game'] = 25
+        elif success_val == "ガシャ（複数本倒れた）":
+            if gasha_count:
+                ps['my_score_game'] += gasha_count
                 ps['my_miss_game'] = 0
                 if ps['my_score_game'] == 50:
                     ps['my_total_score'] += 50
@@ -977,7 +998,13 @@ if page == "🎯 投擲データ記録":
         st.altair_chart(chart, use_container_width=True)
 
         df_disp = df.copy()
-        df_disp['結果'] = df_disp['is_success'].map({1: "○ 成功", 2: "△ 得点あり失敗", 0: "× 完全ミス"})
+        df_disp['結果'] = df_disp['is_success'].map(
+            {1: "○ 成功", 2: "△ 得点あり失敗", 3: "☆ ガシャ", 0: "× 完全ミス"})
+        if 'gasha_count' in df_disp.columns:
+            is_gasha = df_disp['is_success'] == 3
+            df_disp.loc[is_gasha, '結果'] = (
+                "☆ ガシャ（" + df_disp.loc[is_gasha, 'gasha_count'].astype('Int64').astype(str) + "本）"
+            )
         df_disp['距離'] = df_disp['dist'].astype(str) + "m"
         df_disp['狙った番号'] = df_disp['target_no'].astype(str) + "番"
         df_disp = df_disp.sort_values(by='timestamp', ascending=False)
