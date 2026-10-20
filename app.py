@@ -595,6 +595,9 @@ st.markdown("""
     .st-key-menu_switch_row {
         margin-bottom: -1rem !important;
     }
+    div[data-testid="stMarkdownContainer"] hr {
+        margin: 12px 0 !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
