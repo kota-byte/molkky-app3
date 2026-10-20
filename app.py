@@ -570,21 +570,15 @@ if not st.session_state.player_saved_to_storage:
 if st.query_params.get("page") == "sim":
     st.session_state['_page'] = "🤖 AI戦術提示シミュレーター"
 
-col_player, col_switch = st.columns([3, 1])
-with col_player:
-    st.caption(f"👤 プレイヤー: {st.session_state.current_player}")
-with col_switch:
-    if st.button("切替", use_container_width=True):
-        st.session_state.current_player = None
-        st.session_state.player_saved_to_storage = False
-        st.rerun()
+st.caption(f"👤 プレイヤー: {st.session_state.current_player}")
 
-page = st.radio(
-    "メニューを切り替え",
-    ["🎯 投擲データ記録", "🤖 AI戦術提示シミュレーター"],
-    horizontal=True,
-    index=1 if st.session_state.get('_page') == "🤖 AI戦術提示シミュレーター" else 0
-)
+with st.container(key="menu_switch_row"):
+    page = st.radio(
+        "メニューを切り替え",
+        ["🎯 投擲データ記録", "🤖 AI戦術提示シミュレーター"],
+        horizontal=True,
+        index=1 if st.session_state.get('_page') == "🤖 AI戦術提示シミュレーター" else 0
+    )
 st.session_state['_page'] = page
 
 # スマホでの横スクロールを防ぐ（両画面共通）
@@ -597,6 +591,9 @@ st.markdown("""
     .block-container {
         max-width: 100vw !important;
         overflow-x: hidden !important;
+    }
+    .st-key-menu_switch_row {
+        margin-bottom: -1rem !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -806,6 +803,12 @@ if page == "🎯 投擲データ記録":
             font-size: 15px !important;
             font-weight: 800 !important;
         }
+        .st-key-reset_btn_row div.stButton > button {
+            width: auto !important;
+            height: 34px !important;
+            padding: 0 16px !important;
+            font-size: 12px !important;
+        }
         .st-key-obstacle_grid div[data-testid="stHorizontalBlock"] {
             display: flex !important;
             flex-direction: row !important;
@@ -837,10 +840,11 @@ if page == "🎯 投擲データ記録":
             st.rerun()
 
     # リセットボタン
-    if st.button("🔄 得点をリセット", use_container_width=True):
-        ps['my_score_game'] = 0
-        ps['my_miss_game'] = 0
-        st.rerun()
+    with st.container(key="reset_btn_row"):
+        if st.button("🔄 得点をリセット"):
+            ps['my_score_game'] = 0
+            ps['my_miss_game'] = 0
+            st.rerun()
 
     st.divider()
 
@@ -1338,3 +1342,9 @@ else:
             st.session_state['canvas_version'] = st.session_state.get('canvas_version', 0) + 1
             st.session_state.fullscreen_court_nonce += 1
             st.rerun()
+
+st.divider()
+if st.button("ログアウト", use_container_width=True):
+    st.session_state.current_player = None
+    st.session_state.player_saved_to_storage = False
+    st.rerun()
