@@ -685,6 +685,7 @@ if "pending_throw_snapshot" not in st.session_state:
 def _reset_match_counters():
     exp = st.session_state.experiment
     exp["match_number"] += 1
+    exp["condition"] = "アプリなし" if exp["condition"] == "アプリあり" else "アプリあり"
     exp["throw_count"] = 0
     exp["my_bounce_count"] = 0
     exp["opp_bounce_count"] = 0
@@ -1579,7 +1580,7 @@ else:
     exp["condition"] = st.radio(
         "条件", ["アプリあり", "アプリなし"], horizontal=True,
         index=0 if exp["condition"] == "アプリあり" else 1,
-        key="exp_condition_radio",
+        key=f"exp_condition_radio_{exp['match_number']}",
     )
     st.caption(f"🏐 試合 {exp['match_number']} ／ 投擲 {exp['throw_count']}回目")
 
