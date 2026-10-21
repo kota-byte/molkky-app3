@@ -127,6 +127,15 @@ html,body{width:100%;height:100%;overflow:hidden;background:#f8fafc;touch-action
   border-color:rgba(239,68,68,.5);
   opacity:.6;
 }
+
+#auto-arrange-btn{
+  flex-shrink:0;
+  margin:4px 8px 10px;
+  height:40px;border:none;border-radius:8px;
+  background:#f59e0b;color:#1e293b;
+  font-size:13px;font-weight:700;cursor:pointer;
+}
+#auto-arrange-btn:active{background:#d97706;}
 </style>
 </head>
 <body>
@@ -196,6 +205,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#f8fafc;touch-action
     <button id="palette-close" onclick="togglePalette()">✕</button>
   </div>
   <div id="palette-grid"></div>
+  <button id="auto-arrange-btn">⚙️ 初期配置に並べる</button>
 </div>
 
 <script>
@@ -378,6 +388,30 @@ function updateCount() {
   const cnt = Object.values(coords).filter(Boolean).length;
   document.getElementById('pin-count').textContent = cnt + ' / 12 本配置';
 }
+
+// 公式の初期配置：投擲ラインから3.5mの位置を手前の列として、
+// 手前から奥へ 1,2 / 3,10,4 / 5,11,12,6 / 7,9,8 の4列に密着させて並べる
+// （通常モードの小さいコートがピクセル単位で座標を扱っており、0.2m刻み以外の
+// 　値は全画面コートを出た後の再描画で丸められてしまうため、必ず0.2m刻みで指定する）
+const INITIAL_LAYOUT = {
+  1: {x: 0,    y: 3.6}, 2: {x: 0.2,  y: 3.6},
+  3: {x: -0.2, y: 3.8}, 10: {x: 0,   y: 3.8}, 4: {x: 0.2, y: 3.8},
+  5: {x: -0.2, y: 4.0}, 11: {x: 0,   y: 4.0}, 12: {x: 0.2, y: 4.0}, 6: {x: 0.4, y: 4.0},
+  7: {x: -0.2, y: 4.2}, 9: {x: 0,    y: 4.2}, 8: {x: 0.2, y: 4.2},
+};
+
+function autoArrangeInitialLayout() {
+  for (let n = 1; n <= 12; n++) {
+    const pos = INITIAL_LAYOUT[n];
+    coords[n] = {x: pos.x, y: pos.y};
+    createCourtPin(n);
+    positionCourtPin(n);
+    const pal = document.getElementById('pal-' + n);
+    if (pal) pal.classList.add('on-court');
+  }
+  updateCount();
+}
+document.getElementById('auto-arrange-btn').addEventListener('click', autoArrangeInitialLayout);
 
 document.getElementById('exit-btn').addEventListener('click', () => {
   const result = [];
