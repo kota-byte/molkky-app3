@@ -647,9 +647,30 @@ if not st.session_state.player_saved_to_storage:
     )
     st.session_state.player_saved_to_storage = True
 
+if 'player_game_state' not in st.session_state:
+    st.session_state.player_game_state = {}
+
+def get_player_state():
+    """ログイン中のプレイヤーごとに得点状態を分けて保持する"""
+    p = st.session_state.current_player
+    if p not in st.session_state.player_game_state:
+        st.session_state.player_game_state[p] = {
+            'my_score_game': 0,
+            'my_miss_game': 0,
+            'my_total_score': 0,
+            'game_message': None,
+        }
+    return st.session_state.player_game_state[p]
+
+def _reset_current_game():
+    ps = get_player_state()
+    ps['my_score_game'] = 0
+    ps['my_miss_game'] = 0
+
 # --- 実験データ収集用の状態 ---
 if "experiment" not in st.session_state:
     st.session_state.experiment = {
+        "recording": False,
         "match_number": 1,
         "condition": "アプリあり",
         "throw_count": 0,
@@ -661,6 +682,32 @@ if "experiment" not in st.session_state:
 if "pending_throw_snapshot" not in st.session_state:
     st.session_state.pending_throw_snapshot = {}
 
+def _reset_match_counters():
+    exp = st.session_state.experiment
+    exp["match_number"] += 1
+    exp["throw_count"] = 0
+    exp["my_bounce_count"] = 0
+    exp["opp_bounce_count"] = 0
+    exp["opp_score_prev"] = 0
+    exp["miss_loss"] = False
+    st.session_state.pending_throw_snapshot = {}
+
+def _log_match_end(result):
+    exp = st.session_state.experiment
+    append_match_log({
+        "ユーザーID": st.session_state.current_player,
+        "試合番号": exp["match_number"],
+        "条件": exp["condition"],
+        "勝敗": result,
+        "25点戻り回数（自分）": exp["my_bounce_count"],
+        "25点戻り回数（相手）": exp["opp_bounce_count"],
+        "3連続ミスによる敗北": "あり" if exp["miss_loss"] else "なし",
+        "総投擲数": exp["throw_count"],
+        "タイムスタンプ": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    })
+    _reset_match_counters()
+    _reset_current_game()
+
 # --- メニュー ---
 if st.query_params.get("page") == "sim":
     st.session_state['_page'] = "🤖 AI戦術提示シミュレーター"
@@ -668,56 +715,23 @@ if st.query_params.get("page") == "sim":
 st.caption(f"👤 プレイヤー: {st.session_state.current_player}")
 
 with st.container(key="menu_switch_row"):
+    _page_options = ["🎯 投擲データ記録", "🤖 AI戦術提示シミュレーター", "📋 評価実験"]
+    _current_page = st.session_state.get('_page', _page_options[0])
     page = st.radio(
         "メニューを切り替え",
-        ["🎯 投擲データ記録", "🤖 AI戦術提示シミュレーター"],
+        _page_options,
         horizontal=True,
-        index=1 if st.session_state.get('_page') == "🤖 AI戦術提示シミュレーター" else 0
+        index=_page_options.index(_current_page) if _current_page in _page_options else 0
     )
 st.session_state['_page'] = page
 
 @st.dialog("試合結果を記録")
 def _match_end_dialog():
-    exp = st.session_state.experiment
     result = st.radio("勝敗", ["勝ち", "負け"], horizontal=True)
     if st.button("記録する", type="primary", use_container_width=True):
-        append_match_log({
-            "ユーザーID": st.session_state.current_player,
-            "試合番号": exp["match_number"],
-            "条件": exp["condition"],
-            "勝敗": result,
-            "25点戻り回数（自分）": exp["my_bounce_count"],
-            "25点戻り回数（相手）": exp["opp_bounce_count"],
-            "3連続ミスによる敗北": "あり" if exp["miss_loss"] else "なし",
-            "総投擲数": exp["throw_count"],
-            "タイムスタンプ": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        })
-        st.session_state.experiment = {
-            "match_number": exp["match_number"] + 1,
-            "condition": exp["condition"],
-            "throw_count": 0,
-            "my_bounce_count": 0,
-            "opp_bounce_count": 0,
-            "opp_score_prev": 0,
-            "miss_loss": False,
-        }
-        st.session_state.pending_throw_snapshot = {}
+        _log_match_end(result)
         st.toast("試合結果を記録しました！", icon="✅")
         st.rerun()
-
-with st.container(key="experiment_panel"):
-    st.session_state.experiment["condition"] = st.radio(
-        "条件", ["アプリあり", "アプリなし"], horizontal=True,
-        index=0 if st.session_state.experiment["condition"] == "アプリあり" else 1,
-        key="exp_condition_radio",
-    )
-    col_match, col_end = st.columns([2, 1])
-    with col_match:
-        exp = st.session_state.experiment
-        st.caption(f"🏐 試合 {exp['match_number']} ／ 投擲 {exp['throw_count']}回目")
-    with col_end:
-        if st.button("🏁 試合終了", use_container_width=True):
-            _match_end_dialog()
 
 # スマホでの横スクロールを防ぐ（両画面共通）
 st.markdown("""
@@ -806,21 +820,6 @@ if "sim_my_score_val" not in st.session_state:
     st.session_state.sim_my_score_val = 0
 if "sim_my_miss_val" not in st.session_state:
     st.session_state.sim_my_miss_val = 0
-
-if 'player_game_state' not in st.session_state:
-    st.session_state.player_game_state = {}
-
-def get_player_state():
-    """ログイン中のプレイヤーごとに得点状態を分けて保持する"""
-    p = st.session_state.current_player
-    if p not in st.session_state.player_game_state:
-        st.session_state.player_game_state[p] = {
-            'my_score_game': 0,
-            'my_miss_game': 0,
-            'my_total_score': 0,
-            'game_message': None,
-        }
-    return st.session_state.player_game_state[p]
 
 def render_theme_css():
     """全画面共通の配色テーマ（暖色背景＋オレンジのアクセント）"""
@@ -1064,31 +1063,33 @@ if page == "🎯 投擲データ記録":
                       })
             s.commit()
 
-        # 実験ログ：AIシミュレーター画面で記録した投擲前スナップショットと今回の結果を合体してSheetsに追記
+        # 実験ログ：記録中（評価実験画面でスタートした状態）のみ、AIシミュレーター画面で
+        # 記録した投擲前スナップショットと今回の結果を合体してSheetsに追記する
         exp = st.session_state.experiment
-        exp['throw_count'] += 1
-        snapshot = st.session_state.pending_throw_snapshot
-        append_throw_log({
-            "ユーザーID": st.session_state.current_player,
-            "試合番号": exp["match_number"],
-            "条件": exp["condition"],
-            "何投目か": exp["throw_count"],
-            "自分の得点（投擲前）": snapshot.get("my_score", ""),
-            "相手の得点（投擲前）": snapshot.get("opp_score", ""),
-            "自分の連続ミス回数（投擲前）": snapshot.get("my_miss", ""),
-            "相手の連続ミス回数（投擲前）": snapshot.get("opp_miss", ""),
-            "AI1位スキットル番号": snapshot.get("ai_top1_num", ""),
-            "AI1位勝率": snapshot.get("ai_top1_prob", ""),
-            "AI2位スキットル番号": snapshot.get("ai_top2_num", ""),
-            "AI2位勝率": snapshot.get("ai_top2_prob", ""),
-            "AI3位スキットル番号": snapshot.get("ai_top3_num", ""),
-            "AI3位勝率": snapshot.get("ai_top3_prob", ""),
-            "実際に選んだスキットル番号": target_no,
-            "投擲結果": success_val,
-            "倒れたスキットル番号": hit_no if success_val == "得点あり失敗" and hit_no else "",
-            "スキットル配置": snapshot.get("skittle_coords_json", ""),
-            "タイムスタンプ": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        })
+        if exp['recording']:
+            exp['throw_count'] += 1
+            snapshot = st.session_state.pending_throw_snapshot
+            append_throw_log({
+                "ユーザーID": st.session_state.current_player,
+                "試合番号": exp["match_number"],
+                "条件": exp["condition"],
+                "何投目か": exp["throw_count"],
+                "自分の得点（投擲前）": snapshot.get("my_score", ""),
+                "相手の得点（投擲前）": snapshot.get("opp_score", ""),
+                "自分の連続ミス回数（投擲前）": snapshot.get("my_miss", ""),
+                "相手の連続ミス回数（投擲前）": snapshot.get("opp_miss", ""),
+                "AI1位スキットル番号": snapshot.get("ai_top1_num", ""),
+                "AI1位勝率": snapshot.get("ai_top1_prob", ""),
+                "AI2位スキットル番号": snapshot.get("ai_top2_num", ""),
+                "AI2位勝率": snapshot.get("ai_top2_prob", ""),
+                "AI3位スキットル番号": snapshot.get("ai_top3_num", ""),
+                "AI3位勝率": snapshot.get("ai_top3_prob", ""),
+                "実際に選んだスキットル番号": target_no,
+                "投擲結果": success_val,
+                "倒れたスキットル番号": hit_no if success_val == "得点あり失敗" and hit_no else "",
+                "スキットル配置": snapshot.get("skittle_coords_json", ""),
+                "タイムスタンプ": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            })
 
         # 得点計算
         if success_val == "成功":
@@ -1099,9 +1100,12 @@ if page == "🎯 投擲データ記録":
                 ps['my_score_game'] = 0
                 ps['my_miss_game'] = 0
                 ps['game_message'] = "🎉 50点ちょうど！このゲームクリア！次のゲームへ"
+                if exp['recording']:
+                    _log_match_end("勝ち")
             elif ps['my_score_game'] > 50:
                 ps['my_score_game'] = 25
-                exp['my_bounce_count'] += 1
+                if exp['recording']:
+                    exp['my_bounce_count'] += 1
         elif success_val == "得点あり失敗":
             if hit_no:
                 ps['my_score_game'] += hit_no
@@ -1111,9 +1115,12 @@ if page == "🎯 投擲データ記録":
                     ps['my_score_game'] = 0
                     ps['my_miss_game'] = 0
                     ps['game_message'] = "🎉 50点ちょうど！このゲームクリア！次のゲームへ"
+                    if exp['recording']:
+                        _log_match_end("勝ち")
                 elif ps['my_score_game'] > 50:
                     ps['my_score_game'] = 25
-                    exp['my_bounce_count'] += 1
+                    if exp['recording']:
+                        exp['my_bounce_count'] += 1
         elif success_val == "ガシャ（複数本倒れた）":
             if gasha_count:
                 ps['my_score_game'] += gasha_count
@@ -1123,9 +1130,12 @@ if page == "🎯 投擲データ記録":
                     ps['my_score_game'] = 0
                     ps['my_miss_game'] = 0
                     ps['game_message'] = "🎉 50点ちょうど！このゲームクリア！次のゲームへ"
+                    if exp['recording']:
+                        _log_match_end("勝ち")
                 elif ps['my_score_game'] > 50:
                     ps['my_score_game'] = 25
-                    exp['my_bounce_count'] += 1
+                    if exp['recording']:
+                        exp['my_bounce_count'] += 1
         else:
             ps['my_miss_game'] += 1
             if ps['my_miss_game'] >= 3:
@@ -1133,7 +1143,8 @@ if page == "🎯 投擲データ記録":
                 ps['my_score_game'] = 0
                 ps['my_miss_game'] = 0
                 ps['game_message'] = "😢 3回連続ミス！このゲーム終了...次のゲームへ"
-                exp['miss_loss'] = True
+                if exp['recording']:
+                    exp['miss_loss'] = True
 
         for k in st.session_state.obstacles:
             st.session_state.obstacles[k] = False
@@ -1225,7 +1236,7 @@ if page == "🎯 投擲データ記録":
 # ==========================================
 # 画面2：🤖 AI戦術提示シミュレーター
 # ==========================================
-else:
+elif page == "🤖 AI戦術提示シミュレーター":
     # -------------------------------------------------------
     # 通常モード UI
     # -------------------------------------------------------
@@ -1257,7 +1268,7 @@ else:
             with col1:
                 st.session_state.opponents[i]["score"] = st.slider(
                     f"相手{i+1}の得点", 0, 50, opp["score"], key=f"opp_score_{i}")
-                if i == 0:
+                if i == 0 and st.session_state.experiment["recording"]:
                     exp = st.session_state.experiment
                     new_opp_score = st.session_state.opponents[0]["score"]
                     if new_opp_score == 25 and exp["opp_score_prev"] > 25:
@@ -1414,10 +1425,12 @@ else:
             st.caption("ピンをドラッグして配置してください。")
 
         st.write("")
+        exp_recording = st.session_state.experiment["recording"]
         exp_condition = st.session_state.experiment["condition"]
-        btn_label = "🚀 勝利確率を計算する" if exp_condition == "アプリあり" else "📸 この状態を記録する"
+        _no_app_mode = exp_recording and exp_condition != "アプリあり"
+        btn_label = "📸 この状態を記録する" if _no_app_mode else "🚀 勝利確率を計算する"
         if st.button(btn_label, type="primary", use_container_width=True):
-            if exp_condition != "アプリあり":
+            if _no_app_mode:
                 # アプリなし条件：AI提案は計算・表示せず、投擲前の状態だけを記録しておく
                 st.session_state.pending_throw_snapshot = {
                     "my_score": my_score, "opp_score": st.session_state.opponents[0]["score"],
@@ -1457,21 +1470,22 @@ else:
 
                     top3 = sorted(results.items(), key=lambda x: x[1], reverse=True)[:3] if results else []
 
-                    snapshot = {
-                        "my_score": my_score, "opp_score": st.session_state.opponents[0]["score"],
-                        "my_miss": my_miss, "opp_miss": st.session_state.opponents[0]["miss"],
-                        "skittle_coords_json": json.dumps(
-                            {n: c for n, c in st.session_state.skittle_m_coords.items() if c}, ensure_ascii=False
-                        ),
-                    }
-                    for rank in range(3):
-                        if rank < len(top3):
-                            snapshot[f"ai_top{rank+1}_num"] = top3[rank][0]
-                            snapshot[f"ai_top{rank+1}_prob"] = round(top3[rank][1] * 100, 1)
-                        else:
-                            snapshot[f"ai_top{rank+1}_num"] = ""
-                            snapshot[f"ai_top{rank+1}_prob"] = ""
-                    st.session_state.pending_throw_snapshot = snapshot
+                    if exp_recording:
+                        snapshot = {
+                            "my_score": my_score, "opp_score": st.session_state.opponents[0]["score"],
+                            "my_miss": my_miss, "opp_miss": st.session_state.opponents[0]["miss"],
+                            "skittle_coords_json": json.dumps(
+                                {n: c for n, c in st.session_state.skittle_m_coords.items() if c}, ensure_ascii=False
+                            ),
+                        }
+                        for rank in range(3):
+                            if rank < len(top3):
+                                snapshot[f"ai_top{rank+1}_num"] = top3[rank][0]
+                                snapshot[f"ai_top{rank+1}_prob"] = round(top3[rank][1] * 100, 1)
+                            else:
+                                snapshot[f"ai_top{rank+1}_num"] = ""
+                                snapshot[f"ai_top{rank+1}_prob"] = ""
+                        st.session_state.pending_throw_snapshot = snapshot
 
                     if results:
                         st.subheader("🏆 推奨スキットル TOP3")
@@ -1552,6 +1566,38 @@ else:
             st.session_state['canvas_version'] = st.session_state.get('canvas_version', 0) + 1
             st.session_state.fullscreen_court_nonce += 1
             st.rerun()
+
+# ==========================================
+# 画面3：📋 評価実験
+# ==========================================
+else:
+    render_theme_css()
+    st.title("📋 評価実験")
+
+    exp = st.session_state.experiment
+
+    exp["condition"] = st.radio(
+        "条件", ["アプリあり", "アプリなし"], horizontal=True,
+        index=0 if exp["condition"] == "アプリあり" else 1,
+        key="exp_condition_radio",
+    )
+    st.caption(f"🏐 試合 {exp['match_number']} ／ 投擲 {exp['throw_count']}回目")
+
+    if not exp["recording"]:
+        if st.button("▶️ スタート", type="primary", use_container_width=True):
+            exp["recording"] = True
+            _reset_current_game()
+            st.rerun()
+    else:
+        st.markdown("🔴 **記録中**")
+        col_match_end, col_stop = st.columns(2)
+        with col_match_end:
+            if st.button("🏁 試合終了", use_container_width=True):
+                _match_end_dialog()
+        with col_stop:
+            if st.button("⏹ 記録終了", use_container_width=True):
+                exp["recording"] = False
+                st.rerun()
 
 st.divider()
 if st.button("ログアウト", use_container_width=True):
