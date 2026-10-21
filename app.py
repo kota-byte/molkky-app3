@@ -825,11 +825,6 @@ if "skittle_m_coords" not in st.session_state:
 if "opponents" not in st.session_state:
     st.session_state.opponents = [{"score": 0, "miss": 0}]  # デフォルト1人
 
-if "sim_my_score_val" not in st.session_state:
-    st.session_state.sim_my_score_val = 0
-if "sim_my_miss_val" not in st.session_state:
-    st.session_state.sim_my_miss_val = 0
-
 def render_theme_css():
     """全画面共通の配色テーマ（暖色背景＋オレンジのアクセント）"""
     st.markdown("""
@@ -1255,18 +1250,18 @@ elif page == "🤖 AI戦術提示シミュレーター":
             '<h1 style="font-size:28px; line-height:1.3;">🤖 AI戦術提示<br>シミュレーター</h1>',
             unsafe_allow_html=True,
         )
-        # 自分のスコア入力
+        # 自分のスコア入力（投擲データ記録画面の得点・連続ミス回数を引き継ぐ）
+        ps = get_player_state()
         st.write("**自分**")
         col1, col2 = st.columns(2)
         with col1:
             my_score = st.slider(
-                "自分の現在の得点", 0, 50, st.session_state.sim_my_score_val, key="my_score")
-            st.session_state.sim_my_score_val = my_score
+                "自分の現在の得点", 0, 50, ps['my_score_game'],
+                key=f"my_score_{ps['my_score_game']}")
         with col2:
             my_miss = st.radio(
                 "自分の連続ミス回数", [0, 1, 2], horizontal=True,
-                index=st.session_state.sim_my_miss_val, key="sim_my_miss")
-            st.session_state.sim_my_miss_val = my_miss
+                index=ps['my_miss_game'], key=f"sim_my_miss_{ps['my_miss_game']}")
 
         st.write("---")
 
