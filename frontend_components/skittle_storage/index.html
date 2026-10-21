@@ -5,8 +5,6 @@
 </head>
 <body>
 <script>
-const STORAGE_KEY = 'molkky_skittle_layout';
-
 function sendToStreamlit(type, data) {
   const outData = Object.assign({ isStreamlitMessage: true, type: type }, data);
   window.parent.postMessage(outData, "*");
@@ -20,18 +18,19 @@ function setComponentValue(value) {
 
 function onRender(event) {
   const args = event.data.args;
+  const storageKey = args.storageKey || 'molkky_skittle_layout';
   if (args.action === 'save') {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(args.coords || [])); } catch (e) {}
+    try { localStorage.setItem(storageKey, JSON.stringify(args.coords || [])); } catch (e) {}
     setComponentValue(true);
   } else if (args.action === 'load') {
     let stored = [];
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = localStorage.getItem(storageKey);
       if (raw) stored = JSON.parse(raw);
     } catch (e) {}
     setComponentValue(stored);
   } else if (args.action === 'clear') {
-    try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+    try { localStorage.removeItem(storageKey); } catch (e) {}
     setComponentValue(true);
   }
 }

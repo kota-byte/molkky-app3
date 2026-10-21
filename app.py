@@ -822,12 +822,23 @@ if 'fullscreen' not in st.session_state:
 if 'palette_open' not in st.session_state:
     st.session_state.palette_open = True
 
+def _skittle_storage_key():
+    return f"molkky_skittle_layout_{st.session_state.current_player}"
+
 if "skittle_m_coords" not in st.session_state:
     st.session_state.skittle_m_coords = {num: None for num in range(1, 13)}
     st.session_state.skittle_layout_restore_checked = False
+    st.session_state.skittle_layout_player = st.session_state.current_player
+
+if st.session_state.get('skittle_layout_player') != st.session_state.current_player:
+    # プレイヤーが切り替わったら、前の人の配置をメモリ上にも残さない
+    st.session_state.skittle_m_coords = {num: None for num in range(1, 13)}
+    st.session_state.skittle_layout_restore_checked = False
+    st.session_state.skittle_layout_player = st.session_state.current_player
 
 if not st.session_state.get('skittle_layout_restore_checked', True):
-    _restored_layout = _skittle_storage_component(action="load", key="skittle_load")
+    _restored_layout = _skittle_storage_component(
+        action="load", storageKey=_skittle_storage_key(), key="skittle_load")
     if _restored_layout is not None:
         st.session_state.skittle_layout_restore_checked = True
         if _restored_layout:
@@ -850,7 +861,8 @@ if st.session_state.get('skittle_layout_dirty'):
         {"n": n, "x": c[0], "y": c[1]}
         for n, c in st.session_state.skittle_m_coords.items() if c
     ]
-    _skittle_storage_component(action="save", coords=coords_list, key="skittle_save")
+    _skittle_storage_component(
+        action="save", coords=coords_list, storageKey=_skittle_storage_key(), key="skittle_save")
     st.session_state.skittle_layout_dirty = False
 
 if "opponents" not in st.session_state:
