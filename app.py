@@ -668,8 +668,8 @@ def _reset_current_game():
     ps['my_miss_game'] = 0
 
 # --- 実験データ収集用の状態 ---
-if "experiment" not in st.session_state:
-    st.session_state.experiment = {
+def _default_experiment_state():
+    return {
         "recording": False,
         "match_number": 1,
         "condition": "アプリあり",
@@ -679,7 +679,15 @@ if "experiment" not in st.session_state:
         "opp_score_prev": 0,
         "miss_loss": False,
     }
+
+if "experiment" not in st.session_state:
+    st.session_state.experiment = _default_experiment_state()
 if "pending_throw_snapshot" not in st.session_state:
+    st.session_state.pending_throw_snapshot = {}
+
+def _reset_experiment_session():
+    """ユーザー切り替え時に評価実験の状態（記録中かどうかを含む）を引き継がないようにする"""
+    st.session_state.experiment = _default_experiment_state()
     st.session_state.pending_throw_snapshot = {}
 
 def _reset_match_counters():
@@ -1604,4 +1612,5 @@ st.divider()
 if st.button("ログアウト", use_container_width=True):
     st.session_state.current_player = None
     st.session_state.player_saved_to_storage = False
+    _reset_experiment_session()
     st.rerun()
