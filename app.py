@@ -23,6 +23,9 @@ _fullscreen_court_component = components.declare_component("fullscreen_court", p
 _PLAYER_STORAGE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend_components", "player_storage")
 _player_storage_component = components.declare_component("player_storage", path=_PLAYER_STORAGE_DIR)
 
+_SKITTLE_STORAGE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend_components", "skittle_storage")
+_skittle_storage_component = components.declare_component("skittle_storage", path=_SKITTLE_STORAGE_DIR)
+
 # --- 1. データベース準備 ---
 @st.cache_resource
 def init_db():
@@ -821,6 +824,34 @@ if 'palette_open' not in st.session_state:
 
 if "skittle_m_coords" not in st.session_state:
     st.session_state.skittle_m_coords = {num: None for num in range(1, 13)}
+    st.session_state.skittle_layout_restore_checked = False
+
+if not st.session_state.get('skittle_layout_restore_checked', True):
+    _restored_layout = _skittle_storage_component(action="load", key="skittle_load")
+    if _restored_layout is not None:
+        st.session_state.skittle_layout_restore_checked = True
+        if _restored_layout:
+            _new_coords = {num: None for num in range(1, 13)}
+            for item in _restored_layout:
+                _n = item.get("n")
+                if _n and 1 <= _n <= 12:
+                    _new_coords[_n] = (item["x"], item["y"])
+            st.session_state.skittle_m_coords = _new_coords
+        st.rerun()
+
+def _mark_skittle_layout_dirty():
+    """配置の保存を予約する。直後にst.rerun()する呼び出し元が多く、
+    その場でコンポーネントを呼ぶとiframeの読み込み中に中断されてしまうため、
+    次の（rerunに追われない）描画まで保存を遅延させる。"""
+    st.session_state.skittle_layout_dirty = True
+
+if st.session_state.get('skittle_layout_dirty'):
+    coords_list = [
+        {"n": n, "x": c[0], "y": c[1]}
+        for n, c in st.session_state.skittle_m_coords.items() if c
+    ]
+    _skittle_storage_component(action="save", coords=coords_list, key="skittle_save")
+    st.session_state.skittle_layout_dirty = False
 
 if "opponents" not in st.session_state:
     st.session_state.opponents = [{"score": 0, "miss": 0}]  # デフォルト1人
@@ -1308,6 +1339,7 @@ elif page == "🤖 AI戦術提示シミュレーター":
         with col_btn2:
             if st.button("🔄 ピンをリセット", use_container_width=True):
                 st.session_state.skittle_m_coords = {num: None for num in range(1, 13)}
+                _mark_skittle_layout_dirty()
                 st.rerun()
 
         # ========================
@@ -1417,6 +1449,7 @@ elif page == "🤖 AI戦術提示シミュレーター":
             if changed:
                 st.session_state.skittle_m_coords = new_coords
                 st.session_state['canvas_version'] = st.session_state.get('canvas_version', 0) + 1
+                _mark_skittle_layout_dirty()
                 st.rerun()
 
         placed = [(n, c) for n, c in st.session_state.skittle_m_coords.items() if c]
@@ -1569,6 +1602,7 @@ elif page == "🤖 AI戦術提示シミュレーター":
             st.session_state['_page'] = "🤖 AI戦術提示シミュレーター"
             st.session_state['canvas_version'] = st.session_state.get('canvas_version', 0) + 1
             st.session_state.fullscreen_court_nonce += 1
+            _mark_skittle_layout_dirty()
             st.rerun()
 
 # ==========================================

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+</head>
+<body>
+<script>
+const STORAGE_KEY = 'molkky_skittle_layout';
+
+function sendToStreamlit(type, data) {
+  const outData = Object.assign({ isStreamlitMessage: true, type: type }, data);
+  window.parent.postMessage(outData, "*");
+}
+function setFrameHeight(height) {
+  sendToStreamlit("streamlit:setFrameHeight", { height: height });
+}
+function setComponentValue(value) {
+  sendToStreamlit("streamlit:setComponentValue", { value: value, dataType: "json" });
+}
+
+function onRender(event) {
+  const args = event.data.args;
+  if (args.action === 'save') {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(args.coords || [])); } catch (e) {}
+    setComponentValue(true);
+  } else if (args.action === 'load') {
+    let stored = [];
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) stored = JSON.parse(raw);
+    } catch (e) {}
+    setComponentValue(stored);
+  } else if (args.action === 'clear') {
+    try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+    setComponentValue(true);
+  }
+}
+
+window.addEventListener("message", event => {
+  if (event.data.type === "streamlit:render") {
+    onRender(event);
+  }
+});
+
+sendToStreamlit("streamlit:componentReady", { apiVersion: 1 });
+setFrameHeight(0);
+</script>
+</body>
+</html>
