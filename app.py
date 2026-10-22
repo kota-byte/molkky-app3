@@ -744,6 +744,8 @@ if st.session_state.get('skittle_layout_player') != st.session_state.current_pla
     st.session_state.skittle_m_coords = {num: None for num in range(1, 13)}
     st.session_state.skittle_layout_restore_checked = False
     st.session_state.skittle_layout_player = st.session_state.current_player
+    # 距離・障害物配置の自動入力も、前の人のマップを基準にした値を引き継がせない
+    st.session_state.last_target_no_for_autofill = None
 
 if not st.session_state.get('skittle_layout_restore_checked', True):
     _restored_layout = _skittle_storage_component(
