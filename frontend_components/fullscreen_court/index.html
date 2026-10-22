@@ -38,7 +38,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:#f8fafc;touch-action
 }
 .court-pin.dragging{
   text-shadow:0 4px 8px rgba(0,0,0,.55);
-  font-size:18px;
   z-index:200;
 }
 
@@ -324,10 +323,24 @@ function createCourtPin(n) {
   el.addEventListener('mousedown',  onCourtMouseDown);
   pinLayer.appendChild(el);
   pinEls[n] = el;
+  updatePinSize(n);
 }
 
 function destroyCourtPin(n) {
   if (pinEls[n]) { pinEls[n].remove(); delete pinEls[n]; }
+}
+
+// ズーム倍率に合わせてピンの表示サイズも拡大縮小する
+// （ドラッグ中はさらに一回り大きく表示して掴んでいる感を出す）
+const PIN_BASE_SIZE = 14, PIN_DRAG_SIZE = 18;
+function updatePinSize(n) {
+  const el = pinEls[n];
+  if (!el) return;
+  const base = el.classList.contains('dragging') ? PIN_DRAG_SIZE : PIN_BASE_SIZE;
+  el.style.fontSize = (base * zoomScale) + 'px';
+}
+function updateAllPinSizes() {
+  for (const n in pinEls) updatePinSize(n);
 }
 
 function positionCourtPin(n) {
@@ -367,6 +380,7 @@ function applyTransform() {
   for (let n = 1; n <= 12; n++) {
     if (coords[n]) positionCourtPin(n);
   }
+  updateAllPinSizes();
 }
 function zoomAt(cx, cy, newScaleRaw) {
   const newScale = clampScale(newScaleRaw);
@@ -492,6 +506,7 @@ function beginDragFromPalette(n, cx, cy) {
   pinEls[n].style.top  = cy + 'px';
   pinEls[n].style.transform = 'translate(-50%,-50%)';
   pinEls[n].classList.add('dragging');
+  updatePinSize(n);
   drag = {n, el: pinEls[n], startX: cx, startY: cy};
   dragTooltip.classList.add('visible');
   updateDragTooltip(cx, cy);
@@ -513,6 +528,7 @@ function beginDragFromCourt(n, cx, cy) {
   pinEls[n].style.top  = cy + 'px';
   pinEls[n].style.transform = 'translate(-50%,-50%)';
   pinEls[n].classList.add('dragging');
+  updatePinSize(n);
   drag = {n, el: pinEls[n], startX: cx, startY: cy};
   dragTooltip.classList.add('visible');
   updateDragTooltip(cx, cy);
@@ -546,6 +562,7 @@ function onEnd(cx, cy) {
   drag = null;
   el.classList.remove('dragging');
   el.style.transform = 'translate(-50%,-50%)';
+  updatePinSize(n);
   dragTooltip.classList.remove('visible');
 
   const svgPt = screenToSvgPt(cx, cy);
