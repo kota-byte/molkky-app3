@@ -757,6 +757,8 @@ if not st.session_state.get('skittle_layout_restore_checked', True):
                 if _n and 1 <= _n <= 12:
                     _new_coords[_n] = (item["x"], item["y"])
             st.session_state.skittle_m_coords = _new_coords
+        # 配置の復元が完了したら、狙う番号の自動入力を復元後のマップで再評価させる
+        st.session_state.last_target_no_for_autofill = None
         st.rerun()
 
 def _mark_skittle_layout_dirty():
@@ -1004,9 +1006,27 @@ elif page == "🎯 投擲データ記録":
     info_row = st.container(key="info_row")
     col_info1, col_info2 = info_row.columns([1, 2])
     with col_info1:
-        target_no = st.selectbox("狙う番号", list(range(1, 13)), index=11)
+        target_no = st.selectbox("狙う番号", list(range(1, 13)), index=11, key="target_no_select")
+
+    # 狙う番号を変更したら、マップ上の配置から距離・障害物配置を自動入力する
+    if "last_target_no_for_autofill" not in st.session_state:
+        st.session_state.last_target_no_for_autofill = None
+    target_coord_missing = False
+    if target_no != st.session_state.last_target_no_for_autofill:
+        st.session_state.last_target_no_for_autofill = target_no
+        coord = st.session_state.skittle_m_coords.get(target_no)
+        if coord is not None:
+            st.session_state["dist_slider"] = min(10.0, max(3.0, round(coord[1] / 0.5) * 0.5))
+            flags = get_obstacle_flags(target_no, st.session_state.skittle_m_coords)
+            for k in st.session_state.obstacles:
+                st.session_state.obstacles[k] = bool(flags.get(k, 0))
+        else:
+            target_coord_missing = True
+
     with col_info2:
-        dist = st.slider("距離 (m)", 3.0, 10.0, 3.5, 0.5)
+        dist = st.slider("距離 (m)", 3.0, 10.0, 3.5, 0.5, key="dist_slider")
+    if target_coord_missing:
+        st.caption("⚠️ このスキットルはマップに配置されていません。距離・障害物配置は手動で入力してください。")
 
     st.divider()
 
