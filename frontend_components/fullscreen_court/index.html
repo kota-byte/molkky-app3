@@ -158,6 +158,22 @@ html,body{width:100%;height:100%;overflow:hidden;background:#f8fafc;touch-action
   font-size:13px;font-weight:700;cursor:pointer;
 }
 #auto-arrange-btn:active{background:#d97706;}
+
+/* ── ズームコントロール（左下） ── */
+#zoom-controls{
+  position:fixed;left:14px;bottom:20px;z-index:290;
+  display:flex;flex-direction:column;gap:7px;
+}
+#zoom-controls button{
+  width:40px;height:40px;border:none;border-radius:50%;
+  background:rgba(30,41,59,.85);color:#fff;
+  font-size:20px;font-weight:700;line-height:1;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 2px 8px rgba(0,0,0,.25);
+  cursor:pointer;
+}
+#zoom-controls button:active{background:#0f172a;}
+#zoom-reset{font-size:14px !important;}
 </style>
 </head>
 <body>
@@ -166,6 +182,13 @@ html,body{width:100%;height:100%;overflow:hidden;background:#f8fafc;touch-action
 <div id="top-bar">
   <span id="pin-count">0 / 12 本配置</span>
   <button id="exit-btn">✕ 保存して終了</button>
+</div>
+
+<!-- ズームコントロール -->
+<div id="zoom-controls">
+  <button id="zoom-in">＋</button>
+  <button id="zoom-out">－</button>
+  <button id="zoom-reset">⟲</button>
 </div>
 
 <!-- コートSVG -->
@@ -310,6 +333,96 @@ window.addEventListener('resize', () => {
   for (let n = 1; n <= 12; n++) {
     if (coords[n]) positionCourtPin(n);
   }
+});
+
+// ── ズーム／パン ──
+// コート(#court-svg)にCSSのtransformで拡大縮小・平行移動をかける。
+// ピンの画面位置はgetScreenCTM()を使って都度算出しているため、
+// この変換だけ入れれば既存のドラッグ／配置ロジックは変更不要で追従する。
+const courtSvg = document.getElementById('court-svg');
+let zoomScale = 1, panX = 0, panY = 0;
+const MIN_ZOOM = 1, MAX_ZOOM = 6;
+
+function clampScale(s) {
+  return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, s));
+}
+function clampPan() {
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const contentW = vw * zoomScale, contentH = vh * zoomScale;
+  panX = Math.min(0, Math.max(vw - contentW, panX));
+  panY = Math.min(0, Math.max(vh - contentH, panY));
+}
+function applyTransform() {
+  clampPan();
+  courtSvg.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomScale})`;
+  for (let n = 1; n <= 12; n++) {
+    if (coords[n]) positionCourtPin(n);
+  }
+}
+function zoomAt(cx, cy, newScaleRaw) {
+  const newScale = clampScale(newScaleRaw);
+  const localX = (cx - panX) / zoomScale;
+  const localY = (cy - panY) / zoomScale;
+  panX = cx - localX * newScale;
+  panY = cy - localY * newScale;
+  zoomScale = newScale;
+  applyTransform();
+}
+courtSvg.style.transformOrigin = '0 0';
+
+document.getElementById('zoom-in').addEventListener('click', () => {
+  zoomAt(window.innerWidth / 2, window.innerHeight / 2, zoomScale * 1.4);
+});
+document.getElementById('zoom-out').addEventListener('click', () => {
+  zoomAt(window.innerWidth / 2, window.innerHeight / 2, zoomScale / 1.4);
+});
+document.getElementById('zoom-reset').addEventListener('click', () => {
+  zoomScale = 1; panX = 0; panY = 0;
+  applyTransform();
+});
+
+// マウスホイール（PCでの動作確認・操作用）
+courtSvg.addEventListener('wheel', e => {
+  e.preventDefault();
+  const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+  zoomAt(e.clientX, e.clientY, zoomScale * factor);
+}, {passive: false});
+
+// ピンチズーム（2本指）。ピンをドラッグ中は発動させない。
+let pinch = null;
+function touchDist(t0, t1) {
+  return Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+}
+function touchMid(t0, t1) {
+  return { x: (t0.clientX + t1.clientX) / 2, y: (t0.clientY + t1.clientY) / 2 };
+}
+document.addEventListener('touchstart', e => {
+  if (drag || e.touches.length !== 2) return;
+  e.preventDefault();
+  const [t0, t1] = e.touches;
+  pinch = {
+    startDist: touchDist(t0, t1),
+    startScale: zoomScale,
+    startPanX: panX,
+    startPanY: panY,
+  };
+}, {passive: false});
+document.addEventListener('touchmove', e => {
+  if (!pinch || e.touches.length !== 2) return;
+  e.preventDefault();
+  const [t0, t1] = e.touches;
+  const dist = touchDist(t0, t1);
+  const mid = touchMid(t0, t1);
+  const newScale = clampScale(pinch.startScale * (dist / pinch.startDist));
+  const localX = (mid.x - pinch.startPanX) / pinch.startScale;
+  const localY = (mid.y - pinch.startPanY) / pinch.startScale;
+  panX = mid.x - localX * newScale;
+  panY = mid.y - localY * newScale;
+  zoomScale = newScale;
+  applyTransform();
+}, {passive: false});
+document.addEventListener('touchend', e => {
+  if (e.touches.length < 2) pinch = null;
 });
 
 let drag = null;
