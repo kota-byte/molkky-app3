@@ -963,9 +963,66 @@ def render_theme_css():
         """, unsafe_allow_html=True)
 
 # ==========================================
+# 全画面モード：declare_component で postMessage 経由のやりとり
+# スライドアウトパレット（右エッジ）＋ ドラッグ&ドロップ
+# ページに関わらず有効（AI戦術提示シミュレーター・評価実験どちらからでも開ける）
+# ==========================================
+if st.session_state.fullscreen:
+    # 現在の座標をコンポーネントの初期値として渡す
+    init_coords = []
+    for num in range(1, 13):
+        c = st.session_state.skittle_m_coords[num]
+        if c:
+            init_coords.append({"n": num, "x": c[0], "y": c[1]})
+
+    st.markdown("""
+    <style>
+    header[data-testid="stHeader"],
+    section[data-testid="stSidebar"],
+    div[data-testid="stToolbar"],
+    footer, #MainMenu { display:none !important; }
+    .main .block-container { padding:0 !important; max-width:100% !important; }
+    iframe:first-of-type {
+        position:fixed !important; inset:0 !important;
+        width:100vw !important; height:100dvh !important;
+        border:none !important; z-index:100 !important;
+    }
+    iframe:not(:first-of-type) {
+        position:fixed !important;
+        width:0 !important; height:0 !important;
+        top:-9999px !important; left:-9999px !important;
+        pointer-events:none !important;
+        border:none !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    if 'fullscreen_court_nonce' not in st.session_state:
+        st.session_state.fullscreen_court_nonce = 0
+
+    exit_result = _fullscreen_court_component(
+        coords=init_coords,
+        key=f"fullscreen_court_{st.session_state.fullscreen_court_nonce}",
+    )
+
+    if exit_result is not None:
+        new_coords = {num: None for num in range(1, 13)}
+        for item in exit_result:
+            n = item["n"]
+            if 1 <= n <= 12:
+                new_coords[n] = (item["x"], item["y"])
+        st.session_state.skittle_m_coords = new_coords
+        st.session_state.fullscreen = False
+        st.session_state['_page'] = st.session_state.get('fullscreen_return_page', "🤖 AI戦術提示シミュレーター")
+        st.session_state['canvas_version'] = st.session_state.get('canvas_version', 0) + 1
+        st.session_state.fullscreen_court_nonce += 1
+        _mark_skittle_layout_dirty()
+        st.rerun()
+
+# ==========================================
 # 画面1：🎯 投擲データ記録
 # ==========================================
-if page == "🎯 投擲データ記録":
+elif page == "🎯 投擲データ記録":
     render_theme_css()
     st.markdown("""
         <style>
@@ -1306,10 +1363,6 @@ if page == "🎯 投擲データ記録":
 # 画面2：🤖 AI戦術提示シミュレーター
 # ==========================================
 elif page == "🤖 AI戦術提示シミュレーター":
-    # -------------------------------------------------------
-    # 通常モード UI
-    # -------------------------------------------------------
-    if not st.session_state.fullscreen:
         render_theme_css()
         st.markdown(
             '<h1 style="font-size:28px; line-height:1.3;">🤖 AI戦術提示<br>シミュレーター</h1>',
@@ -1369,6 +1422,7 @@ elif page == "🤖 AI戦術提示シミュレーター":
         with col_btn1:
             if st.button("⛶ 全画面コートで配置", type="primary", use_container_width=True):
                 st.session_state.fullscreen = True
+                st.session_state.fullscreen_return_page = "🤖 AI戦術提示シミュレーター"
                 st.rerun()
         with col_btn2:
             if st.button("🔄 ピンをリセット", use_container_width=True):
@@ -1583,61 +1637,6 @@ elif page == "🤖 AI戦術提示シミュレーター":
                                 for n, c in sorted(coords_snapshot.items()) if c
                             )
                             st.caption(active_str)
-    # -------------------------------------------------------
-    # 全画面モード：declare_component で postMessage 経由のやりとり
-    # スライドアウトパレット（右エッジ）＋ ドラッグ&ドロップ
-    # -------------------------------------------------------
-    else:
-        # 現在の座標をコンポーネントの初期値として渡す
-        init_coords = []
-        for num in range(1, 13):
-            c = st.session_state.skittle_m_coords[num]
-            if c:
-                init_coords.append({"n": num, "x": c[0], "y": c[1]})
-
-        st.markdown("""
-        <style>
-        header[data-testid="stHeader"],
-        section[data-testid="stSidebar"],
-        div[data-testid="stToolbar"],
-        footer, #MainMenu { display:none !important; }
-        .main .block-container { padding:0 !important; max-width:100% !important; }
-        iframe:first-of-type {
-            position:fixed !important; inset:0 !important;
-            width:100vw !important; height:100dvh !important;
-            border:none !important; z-index:100 !important;
-        }
-        iframe:not(:first-of-type) {
-            position:fixed !important;
-            width:0 !important; height:0 !important;
-            top:-9999px !important; left:-9999px !important;
-            pointer-events:none !important;
-            border:none !important;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-
-        if 'fullscreen_court_nonce' not in st.session_state:
-            st.session_state.fullscreen_court_nonce = 0
-
-        exit_result = _fullscreen_court_component(
-            coords=init_coords,
-            key=f"fullscreen_court_{st.session_state.fullscreen_court_nonce}",
-        )
-
-        if exit_result is not None:
-            new_coords = {num: None for num in range(1, 13)}
-            for item in exit_result:
-                n = item["n"]
-                if 1 <= n <= 12:
-                    new_coords[n] = (item["x"], item["y"])
-            st.session_state.skittle_m_coords = new_coords
-            st.session_state.fullscreen = False
-            st.session_state['_page'] = "🤖 AI戦術提示シミュレーター"
-            st.session_state['canvas_version'] = st.session_state.get('canvas_version', 0) + 1
-            st.session_state.fullscreen_court_nonce += 1
-            _mark_skittle_layout_dirty()
-            st.rerun()
 
 # ==========================================
 # 画面3：📋 評価実験
@@ -1672,6 +1671,22 @@ else:
                 st.rerun()
 
     st.divider()
+    st.subheader("🗺️ スキットル配置")
+    col_fs, col_reset = st.columns(2)
+    with col_fs:
+        if st.button("⛶ 全画面コートで配置", type="primary", use_container_width=True, key="exp_fullscreen_btn"):
+            st.session_state.fullscreen = True
+            st.session_state.fullscreen_return_page = "📋 評価実験"
+            st.rerun()
+    with col_reset:
+        if st.button("🔄 ピンをリセット", use_container_width=True, key="exp_reset_pins_btn"):
+            st.session_state.skittle_m_coords = {num: None for num in range(1, 13)}
+            _mark_skittle_layout_dirty()
+            st.rerun()
+
+    placed = [(n, c) for n, c in st.session_state.skittle_m_coords.items() if c]
+    st.caption(f"📍 配置済み（{len(placed)}本）" if placed else "スキットルが配置されていません。")
+
     st.caption("実験者がスキットル配置だけを記録する（記録中かどうかに関わらず使えます）")
     if st.button("📍 配置を記録する", use_container_width=True):
         coords_json = json.dumps(
