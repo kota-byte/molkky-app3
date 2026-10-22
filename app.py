@@ -1006,22 +1006,26 @@ elif page == "🎯 投擲データ記録":
     info_row = st.container(key="info_row")
     col_info1, col_info2 = info_row.columns([1, 2])
     with col_info1:
-        target_no = st.selectbox("狙う番号", list(range(1, 13)), index=11, key="target_no_select")
+        target_no = st.selectbox(
+            "狙う番号", list(range(1, 13)) + ["ガシャ"], index=11, key="target_no_select")
+    is_opening_gasha = (target_no == "ガシャ")
 
     # 狙う番号を変更したら、マップ上の配置から距離・障害物配置を自動入力する
+    # （「ガシャ」＝特定の1本を狙わない投擲のため、マップから自動入力はしない）
     if "last_target_no_for_autofill" not in st.session_state:
         st.session_state.last_target_no_for_autofill = None
     target_coord_missing = False
     if target_no != st.session_state.last_target_no_for_autofill:
         st.session_state.last_target_no_for_autofill = target_no
-        coord = st.session_state.skittle_m_coords.get(target_no)
-        if coord is not None:
-            st.session_state["dist_slider"] = min(10.0, max(3.0, round(coord[1] / 0.5) * 0.5))
-            flags = get_obstacle_flags(target_no, st.session_state.skittle_m_coords)
-            for k in st.session_state.obstacles:
-                st.session_state.obstacles[k] = bool(flags.get(k, 0))
-        else:
-            target_coord_missing = True
+        if not is_opening_gasha:
+            coord = st.session_state.skittle_m_coords.get(target_no)
+            if coord is not None:
+                st.session_state["dist_slider"] = min(10.0, max(3.0, round(coord[1] / 0.5) * 0.5))
+                flags = get_obstacle_flags(target_no, st.session_state.skittle_m_coords)
+                for k in st.session_state.obstacles:
+                    st.session_state.obstacles[k] = bool(flags.get(k, 0))
+            else:
+                target_coord_missing = True
 
     with col_info2:
         dist = st.slider("距離 (m)", 3.0, 10.0, 3.5, 0.5, key="dist_slider")
@@ -1030,37 +1034,45 @@ elif page == "🎯 投擲データ記録":
 
     st.divider()
 
-    st.subheader("障害物配置")
-    st.caption("ターゲット周囲の状況をタップ（前＝自分に近い側）")
+    if is_opening_gasha:
+        st.caption("☆「ガシャ」＝特定の1本を狙わない投擲（オープニングスローなど）。障害物配置の入力は不要です。")
+    else:
+        st.subheader("障害物配置")
+        st.caption("ターゲット周囲の状況をタップ（前＝自分に近い側）")
 
-    keys = [
-        ['nw', 'n', 'ne'],
-        ['w',  None, 'e'],
-        ['sw', 's', 'se']
-    ]
-    labels = {
-        'nw': '左奥', 'n': '奥', 'ne': '右奥',
-        'w': '左', 'e': '右',
-        'sw': '左前', 's': '手前', 'se': '右前'
-    }
+        keys = [
+            ['nw', 'n', 'ne'],
+            ['w',  None, 'e'],
+            ['sw', 's', 'se']
+        ]
+        labels = {
+            'nw': '左奥', 'n': '奥', 'ne': '右奥',
+            'w': '左', 'e': '右',
+            'sw': '左前', 's': '手前', 'se': '右前'
+        }
 
-    with st.container(key="obstacle_grid"):
-        for row in keys:
-            cols = st.columns(3, gap="small")
-            for i, key in enumerate(row):
-                if key is None:
-                    cols[i].button("🎯", disabled=True, key="center_target")
-                else:
-                    is_active = st.session_state.obstacles[key]
-                    label = f"🚩 {labels[key]}" if is_active else labels[key]
-                    if cols[i].button(label, key=f"btn_{key}"):
-                        st.session_state.obstacles[key] = not st.session_state.obstacles[key]
-                        st.rerun()
+        with st.container(key="obstacle_grid"):
+            for row in keys:
+                cols = st.columns(3, gap="small")
+                for i, key in enumerate(row):
+                    if key is None:
+                        cols[i].button("🎯", disabled=True, key="center_target")
+                    else:
+                        is_active = st.session_state.obstacles[key]
+                        label = f"🚩 {labels[key]}" if is_active else labels[key]
+                        if cols[i].button(label, key=f"btn_{key}"):
+                            st.session_state.obstacles[key] = not st.session_state.obstacles[key]
+                            st.rerun()
 
     st.divider()
 
-    success_val = st.radio(
-        "結果", ["成功", "得点あり失敗", "ガシャ（複数本倒れた）", "完全ミス"], horizontal=True)
+    # 「ガシャ」狙いは特定の1本を狙っていないため「成功」は選べない
+    # （1本だけ倒れた場合は「得点あり失敗」で倒れた番号を記録する）
+    result_options = (
+        ["得点あり失敗", "ガシャ（複数本倒れた）", "完全ミス"] if is_opening_gasha
+        else ["成功", "得点あり失敗", "ガシャ（複数本倒れた）", "完全ミス"]
+    )
+    success_val = st.radio("結果", result_options, horizontal=True)
     if success_val == "得点あり失敗":
         hit_no = st.selectbox("倒れたスキットル番号", list(range(1, 13)))
     else:
@@ -1074,27 +1086,30 @@ elif page == "🎯 投擲データ記録":
         is_success_val = {
             "成功": 1, "得点あり失敗": 2, "ガシャ（複数本倒れた）": 3, "完全ミス": 0
         }[success_val]
-        with db_conn.session as s:
-            s.execute(text('''INSERT INTO throw_logs
-                         (dist, target_no, is_success, n, ne, e, se, s, sw, w, nw, player, timestamp, gasha_count)
-                         VALUES (:dist, :target_no, :is_success, :n, :ne, :e, :se, :s, :sw, :w, :nw, :player, :ts, :gasha_count)'''),
-                      {
-                          "dist": dist,
-                          "target_no": target_no,
-                          "is_success": is_success_val,
-                          "n": int(st.session_state.obstacles['n']),
-                          "ne": int(st.session_state.obstacles['ne']),
-                          "e": int(st.session_state.obstacles['e']),
-                          "se": int(st.session_state.obstacles['se']),
-                          "s": int(st.session_state.obstacles['s']),
-                          "sw": int(st.session_state.obstacles['sw']),
-                          "w": int(st.session_state.obstacles['w']),
-                          "nw": int(st.session_state.obstacles['nw']),
-                          "player": st.session_state.current_player,
-                          "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                          "gasha_count": gasha_count,
-                      })
-            s.commit()
+        if not is_opening_gasha:
+            # 「ガシャ」（特定の1本を狙わない投擲）は、狙った番号・障害物配置という前提が
+            # 成り立たないため、距離別成功率の統計には使わずDBに保存しない
+            with db_conn.session as s:
+                s.execute(text('''INSERT INTO throw_logs
+                             (dist, target_no, is_success, n, ne, e, se, s, sw, w, nw, player, timestamp, gasha_count)
+                             VALUES (:dist, :target_no, :is_success, :n, :ne, :e, :se, :s, :sw, :w, :nw, :player, :ts, :gasha_count)'''),
+                          {
+                              "dist": dist,
+                              "target_no": target_no,
+                              "is_success": is_success_val,
+                              "n": int(st.session_state.obstacles['n']),
+                              "ne": int(st.session_state.obstacles['ne']),
+                              "e": int(st.session_state.obstacles['e']),
+                              "se": int(st.session_state.obstacles['se']),
+                              "s": int(st.session_state.obstacles['s']),
+                              "sw": int(st.session_state.obstacles['sw']),
+                              "w": int(st.session_state.obstacles['w']),
+                              "nw": int(st.session_state.obstacles['nw']),
+                              "player": st.session_state.current_player,
+                              "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                              "gasha_count": gasha_count,
+                          })
+                s.commit()
 
         # 実験ログ：記録中（評価実験画面でスタートした状態）のみ、AIシミュレーター画面で
         # 記録した投擲前スナップショットと今回の結果を合体してSheetsに追記する
