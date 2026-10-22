@@ -209,16 +209,6 @@ def choose_unintended_hit(target_num, coords_dict, max_dist=1.0):
         return None
     return random.choices(candidates, weights=weights, k=1)[0]
 
-def move_skittle_trace(coords_dict, num):
-    """num番のスキットルを倒れた位置に移動（トレース表示用）"""
-    if coords_dict.get(num) is None:
-        return
-    x, y = coords_dict[num]
-    dx, dy = get_fall_offset()
-    new_x = max(-2.0, min(2.0, x + dx))
-    new_y = max(0.1, min(10.0, y + dy))
-    coords_dict[num] = (new_x, new_y)
-
 BASE_RATE = {
     3.0: 0.70, 3.5: 0.65, 4.0: 0.60, 4.5: 0.55,
     5.0: 0.50, 5.5: 0.45, 6.0: 0.40, 6.5: 0.35,
@@ -244,105 +234,6 @@ def get_success_rate(dist, obstacle_flags, df):
     actual_rate = (matched['is_success'] == 1).mean()
     weight = n / (n + K)
     return base * (1 - weight) + actual_rate * weight
-
-
-def trace_one_simulation(target_num, my_score, my_miss, opp_score, opp_miss, skittle_coords, df):
-    """1回分のシミュレーションを実行し、各ターンの座標変化を記録して返す"""
-    OPP_RATE = {
-        3.0:0.70, 3.5:0.65, 4.0:0.60, 4.5:0.55,
-        5.0:0.50, 5.5:0.45, 6.0:0.40, 6.5:0.35,
-        7.0:0.30, 7.5:0.25, 8.0:0.20, 8.5:0.15,
-        9.0:0.12, 9.5:0.10, 10.0:0.08
-    }
-
-    log = []
-    sim_coords = {n: c for n, c in skittle_coords.items()}
-    ms, mm, os_, om = my_score, my_miss, opp_score, opp_miss
-
-    log.append(("初期配置", dict(sim_coords), ms, os_))
-
-    my_rate = get_success_rate(
-        round(sim_coords[target_num][1] / 0.5) * 0.5,
-        get_obstacle_flags(target_num, sim_coords), df
-    )
-    result = random.random()
-    if result < my_rate:
-        ms += target_num
-        move_skittle_trace(sim_coords, target_num)
-        log.append((f"自分: {target_num}番成功", dict(sim_coords), ms, os_))
-    elif result < my_rate + 0.15:
-        mm = 0
-        hit = choose_unintended_hit(target_num, sim_coords)
-        if hit is not None:
-            ms += hit
-            move_skittle_trace(sim_coords, hit)
-            log.append((f"自分: 得点あり失敗(意図せず{hit}番)", dict(sim_coords), ms, os_))
-    else:
-        mm += 1
-        log.append((f"自分: 完全ミス({mm}回目)", dict(sim_coords), ms, os_))
-        if mm >= 3:
-            log.append(("→ 自分3連続ミスで相手の勝利", dict(sim_coords), ms, os_))
-            return log
-
-    my_turn = False
-    for turn_i in range(10):  # 最初の10ターンだけ記録
-        active_now = [n for n, c in sim_coords.items() if c is not None]
-        if not active_now:
-            break
-        if my_turn:
-            best = min(active_now, key=lambda n: abs(ms + n - 50) if ms + n <= 50 else abs(ms + n - 25 - 50))
-            rate2 = get_success_rate(
-                round(sim_coords[best][1] / 0.5) * 0.5,
-                get_obstacle_flags(best, sim_coords), df
-            )
-            r2 = random.random()
-            if r2 < rate2:
-                ms += best
-                move_skittle_trace(sim_coords, best)
-                log.append((f"自分: {best}番成功", dict(sim_coords), ms, os_))
-            elif r2 < rate2 + 0.15:
-                mm = 0
-                hit2 = choose_unintended_hit(best, sim_coords)
-                if hit2 is not None:
-                    ms += hit2
-                    move_skittle_trace(sim_coords, hit2)
-                    log.append((f"自分: 得点あり失敗(意図せず{hit2}番)", dict(sim_coords), ms, os_))
-            else:
-                mm += 1
-                log.append((f"自分: 完全ミス({mm}回目)", dict(sim_coords), ms, os_))
-                if mm >= 3:
-                    log.append(("→ 自分3連続ミスで相手の勝利", dict(sim_coords), ms, os_))
-                    break
-        else:
-            opp_target = random.choice(active_now)
-            coord = sim_coords[opp_target]
-            opp_dist = max(3.0, min(10.0, round(coord[1] / 0.5) * 0.5))
-            opp_rate = OPP_RATE.get(opp_dist, 0.5)
-            r3 = random.random()
-            if r3 < opp_rate:
-                os_ += opp_target
-                om = 0
-                move_skittle_trace(sim_coords, opp_target)
-                log.append((f"相手: {opp_target}番成功", dict(sim_coords), ms, os_))
-            elif r3 < opp_rate + 0.15:
-                om = 0
-                hit3 = choose_unintended_hit(opp_target, sim_coords)
-                if hit3 is not None:
-                    os_ += hit3
-                    move_skittle_trace(sim_coords, hit3)
-                    log.append((f"相手: 得点あり失敗(意図せず{hit3}番)", dict(sim_coords), ms, os_))
-            else:
-                om += 1
-                log.append((f"相手: 完全ミス({om}回目)", dict(sim_coords), ms, os_))
-                if om >= 3:
-                    log.append(("→ 相手3連続ミスで自分の勝利", dict(sim_coords), ms, os_))
-                    break
-
-        if ms >= 50 or os_ >= 50:
-            break
-        my_turn = not my_turn
-
-    return log
 
 
 def run_simulation(
@@ -1540,15 +1431,6 @@ elif page == "🤖 AI戦術提示シミュレーター":
                 _mark_skittle_layout_dirty()
                 st.rerun()
 
-        placed = [(n, c) for n, c in st.session_state.skittle_m_coords.items() if c]
-        if placed:
-            st.write(f"📍 配置済み（{len(placed)}本）:")
-            for pn, (gx, gy) in sorted(placed):
-                d = f"左{abs(gx):.2f}m" if gx < 0 else (f"右{gx:.2f}m" if gx > 0 else "中央")
-                st.caption(f"📌 {pn}番: 奥{gy:.2f}m・{d}")
-        else:
-            st.caption("ピンをドラッグして配置してください。")
-
         st.write("")
         exp_recording = st.session_state.experiment["recording"]
         exp_condition = st.session_state.experiment["condition"]
@@ -1585,14 +1467,6 @@ elif page == "🤖 AI戦術提示シミュレーター":
                             n_sim=2000
                         )
 
-                    st.write("各スキットルの成功率:")
-                    active_tmp = {n: c for n, c in st.session_state.skittle_m_coords.items() if c}
-                    for n, c in sorted(active_tmp.items()):
-                        obs = get_obstacle_flags(n, st.session_state.skittle_m_coords)
-                        d = round(c[1] / 0.5) * 0.5
-                        r = get_success_rate(d, obs, df)
-                        st.caption(f"{n}番: 距離{d}m, 成功率{r:.3f}")
-
                     top3 = sorted(results.items(), key=lambda x: x[1], reverse=True)[:3] if results else []
 
                     if exp_recording:
@@ -1620,23 +1494,6 @@ elif page == "🤖 AI戦術提示シミュレーター":
                                 value=f"{prob*100:.1f}%",
                                 help=f"このスキットルを狙った場合の勝利確率"
                             )
-
-                        # ↓座標変化のトレース表示（デバッグ用）
-                        st.write("---")
-                        st.write("🔍 1試行の座標変化（デバッグ用）:")
-                        trace_log = trace_one_simulation(
-                            top3[0][0], my_score, my_miss,
-                            st.session_state.opponents[0]["score"],
-                            st.session_state.opponents[0]["miss"],
-                            st.session_state.skittle_m_coords, df
-                        )
-                        for label, coords_snapshot, ms_val, os_val in trace_log:
-                            st.caption(f"**{label}** (自分{ms_val}点・相手{os_val}点)")
-                            active_str = ", ".join(
-                                f"{n}番({c[0]:.2f},{c[1]:.2f})"
-                                for n, c in sorted(coords_snapshot.items()) if c
-                            )
-                            st.caption(active_str)
 
 # ==========================================
 # 画面3：📋 評価実験
