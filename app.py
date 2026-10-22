@@ -216,24 +216,70 @@ BASE_RATE = {
     9.0: 0.12, 9.5: 0.10, 10.0: 0.08
 }
 K = 4  # データ件数による信頼度の調整値（大きいほどベース値を重視）
+DIRS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw']
+
+def _obstacle_exact_mask(df, obstacle_flags):
+    """障害物8方位が完全一致する行だけを対象にする"""
+    mask = pd.Series(True, index=df.index)
+    for d in DIRS:
+        mask &= (df[d] == obstacle_flags.get(d, 0))
+    return mask
+
+def _obstacle_near_mask(df, obstacle_flags):
+    """障害物ありの方位は、隣接する方位にあったデータも一致とみなす
+    （障害物なしの方位は、隣の方位が障害物あり判定の許容範囲に使われて
+    いない限り、従来どおり完全一致＝空であることを要求する。隣接方位の
+    許容に使われた方位は、そこに障害物があってもなくても問わない）"""
+    n = len(DIRS)
+    flagged_idx = [i for i, d in enumerate(DIRS) if obstacle_flags.get(d, 0)]
+    allowed_idx = set()
+    for i in flagged_idx:
+        allowed_idx.update({(i - 1) % n, i, (i + 1) % n})
+
+    mask = pd.Series(True, index=df.index)
+    for i in flagged_idx:
+        neighbors = [DIRS[(i - 1) % n], DIRS[i], DIRS[(i + 1) % n]]
+        near = pd.Series(False, index=df.index)
+        for nd in neighbors:
+            near |= (df[nd] == 1)
+        mask &= near
+    for i, d in enumerate(DIRS):
+        if i not in allowed_idx:
+            mask &= (df[d] == 0)
+    return mask
 
 def get_success_rate(dist, obstacle_flags, df):
-    """ベース値（距離別）にデータ実測値を重み付けして混ぜる"""
+    """ベース値（距離別）に過去データの実測値を重み付けして混ぜる。
+    一致するデータが見つかるまで、以下の順でマッチング条件を緩める：
+    1. 距離完全一致 ＋ 障害物パターン完全一致
+    2. 距離完全一致 ＋ 障害物は隣接方位も許容
+    3. 距離±0.5m ＋ 障害物パターン完全一致
+    4. 距離±1.0m ＋ 障害物パターン完全一致
+    5. どれも見つからなければ、距離だけで決まる基準値をそのまま使う"""
     base = BASE_RATE.get(round(dist * 2) / 2, 0.5)
 
-    dirs = ['n','ne','e','se','s','sw','w','nw']
-    mask = df['dist'] == dist
-    for d in dirs:
-        mask &= (df[d] == obstacle_flags.get(d, 0))
-    matched = df[mask]
-    n = len(matched)
+    dist_exact = df['dist'] == dist
+    dist_05 = (df['dist'] - dist).abs() <= 0.5
+    dist_10 = (df['dist'] - dist).abs() <= 1.0
+    obstacle_exact = _obstacle_exact_mask(df, obstacle_flags)
+    obstacle_near = _obstacle_near_mask(df, obstacle_flags)
 
-    if n == 0:
-        return base
+    stages = [
+        dist_exact & obstacle_exact,
+        dist_exact & obstacle_near,
+        dist_05 & obstacle_exact,
+        dist_10 & obstacle_exact,
+    ]
 
-    actual_rate = (matched['is_success'] == 1).mean()
-    weight = n / (n + K)
-    return base * (1 - weight) + actual_rate * weight
+    for stage_mask in stages:
+        matched = df[stage_mask]
+        n = len(matched)
+        if n > 0:
+            actual_rate = (matched['is_success'] == 1).mean()
+            weight = n / (n + K)
+            return base * (1 - weight) + actual_rate * weight
+
+    return base
 
 
 def run_simulation(
