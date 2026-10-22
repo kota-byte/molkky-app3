@@ -62,6 +62,7 @@ THROW_LOG_COLUMNS = [
     "AI3位スキットル番号", "AI3位勝率",
     "実際に選んだスキットル番号", "投擲結果", "倒れたスキットル番号",
     "スキットル配置", "タイムスタンプ",
+    "スキットル配置（投擲後）",
 ]
 MATCH_LOG_COLUMNS = [
     "ユーザーID", "試合番号", "条件", "勝敗",
@@ -1116,6 +1117,9 @@ if page == "🎯 投擲データ記録":
         if exp['recording']:
             exp['throw_count'] += 1
             snapshot = st.session_state.pending_throw_snapshot
+            post_coords_json = json.dumps(
+                {n: c for n, c in st.session_state.skittle_m_coords.items() if c}, ensure_ascii=False
+            )
             append_throw_log({
                 "ユーザーID": st.session_state.current_player,
                 "試合番号": exp["match_number"],
@@ -1136,6 +1140,7 @@ if page == "🎯 投擲データ記録":
                 "倒れたスキットル番号": hit_no if success_val == "得点あり失敗" and hit_no else "",
                 "スキットル配置": snapshot.get("skittle_coords_json", ""),
                 "タイムスタンプ": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "スキットル配置（投擲後）": post_coords_json,
             })
 
         # 得点計算
