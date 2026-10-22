@@ -69,7 +69,7 @@ MATCH_LOG_COLUMNS = [
     "25点戻り回数（自分）", "25点戻り回数（相手）",
     "3連続ミスによる敗北", "総投擲数", "タイムスタンプ",
 ]
-SKITTLE_SNAPSHOT_COLUMNS = ["ユーザーID", "タイムスタンプ", "スキットル配置"]
+SKITTLE_SNAPSHOT_COLUMNS = ["ユーザーID", "タイムスタンプ", "試合番号", "条件", "スキットル配置"]
 
 def _gsheets_log_error(context, e):
     import traceback
@@ -1695,6 +1695,8 @@ else:
         ok = append_skittle_snapshot({
             "ユーザーID": st.session_state.current_player,
             "タイムスタンプ": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "試合番号": exp["match_number"],
+            "条件": exp["condition"],
             "スキットル配置": coords_json,
         })
         if ok:
