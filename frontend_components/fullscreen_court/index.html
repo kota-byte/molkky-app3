@@ -283,18 +283,27 @@ function svgToM(sx, sy) {
   };
 }
 
+// viewBox(0 0 480 1080) + preserveAspectRatio="xMidYMid meet" を、ブラウザの
+// getScreenCTM()に頼らず自前で計算する（CSSのtransformをgetScreenCTM()が
+// 反映するかどうかはブラウザ実装によって差があり、反映されない環境では
+// ズーム時にピンだけが取り残されて画面左上方向にズレて見えるバグになるため）。
+const VB_W = 480, VB_H = 1080;
+function getBaseFit() {
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const s = Math.min(vw / VB_W, vh / VB_H);
+  return { scale: s, offsetX: (vw - VB_W * s) / 2, offsetY: (vh - VB_H * s) / 2 };
+}
 function svgPtToScreen(svgX, svgY) {
-  const svg = document.getElementById('court-svg');
-  const pt = svg.createSVGPoint();
-  pt.x = svgX; pt.y = svgY;
-  const m = svg.getScreenCTM();
-  return { x: pt.x * m.a + m.e, y: pt.y * m.d + m.f };
+  const base = getBaseFit();
+  const baseX = base.offsetX + svgX * base.scale;
+  const baseY = base.offsetY + svgY * base.scale;
+  return { x: baseX * zoomScale + panX, y: baseY * zoomScale + panY };
 }
 function screenToSvgPt(cx, cy) {
-  const svg = document.getElementById('court-svg');
-  const pt = svg.createSVGPoint();
-  pt.x = cx; pt.y = cy;
-  return pt.matrixTransform(svg.getScreenCTM().inverse());
+  const base = getBaseFit();
+  const baseX = (cx - panX) / zoomScale;
+  const baseY = (cy - panY) / zoomScale;
+  return { x: (baseX - base.offsetX) / base.scale, y: (baseY - base.offsetY) / base.scale };
 }
 
 const coords = {};
