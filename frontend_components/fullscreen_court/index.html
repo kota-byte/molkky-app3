@@ -407,6 +407,7 @@ function touchMid(t0, t1) {
 }
 document.addEventListener('touchstart', e => {
   if (drag || e.touches.length !== 2) return;
+  panDrag = null; // 1本指パン中に2本目が触れたらパンチズームに引き継ぐ
   e.preventDefault();
   const [t0, t1] = e.touches;
   pinch = {
@@ -433,6 +434,36 @@ document.addEventListener('touchmove', e => {
 document.addEventListener('touchend', e => {
   if (e.touches.length < 2) pinch = null;
 });
+
+// 単指スワイプでパン（コート背景をドラッグして移動。ピンやピンチズームとは排他）
+let panDrag = null;
+courtSvg.style.cursor = 'grab';
+function beginPan(cx, cy) {
+  panDrag = { startX: cx, startY: cy, startPanX: panX, startPanY: panY };
+}
+function movePan(cx, cy) {
+  if (!panDrag) return;
+  panX = panDrag.startPanX + (cx - panDrag.startX);
+  panY = panDrag.startPanY + (cy - panDrag.startY);
+  applyTransform();
+}
+courtSvg.addEventListener('touchstart', e => {
+  if (drag || pinch || e.touches.length !== 1) return;
+  e.preventDefault();
+  beginPan(e.touches[0].clientX, e.touches[0].clientY);
+}, {passive: false});
+courtSvg.addEventListener('mousedown', e => {
+  if (drag) return;
+  e.preventDefault();
+  beginPan(e.clientX, e.clientY);
+  courtSvg.style.cursor = 'grabbing';
+});
+document.addEventListener('touchmove', e => {
+  if (panDrag && e.touches.length === 1) { e.preventDefault(); movePan(e.touches[0].clientX, e.touches[0].clientY); }
+}, {passive: false});
+document.addEventListener('mousemove', e => { if (panDrag) movePan(e.clientX, e.clientY); });
+document.addEventListener('touchend', e => { if (e.touches.length === 0) panDrag = null; });
+document.addEventListener('mouseup', () => { panDrag = null; courtSvg.style.cursor = 'grab'; });
 
 let drag = null;
 const dragTooltip = document.getElementById('drag-tooltip');
