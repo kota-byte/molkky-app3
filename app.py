@@ -69,6 +69,7 @@ MATCH_LOG_COLUMNS = [
     "25点戻り回数（自分）", "25点戻り回数（相手）",
     "3連続ミスによる敗北", "総投擲数", "タイムスタンプ",
 ]
+SKITTLE_SNAPSHOT_COLUMNS = ["ユーザーID", "タイムスタンプ", "スキットル配置"]
 
 def _gsheets_log_error(context, e):
     import traceback
@@ -100,7 +101,10 @@ def _gsheets_worksheet(sheet_name, columns):
         return None
     try:
         sh = client.open_by_key(st.secrets["gsheets"]["sheet_id"])
-        ws = sh.worksheet(sheet_name)
+        try:
+            ws = sh.worksheet(sheet_name)
+        except gspread.WorksheetNotFound:
+            ws = sh.add_worksheet(title=sheet_name, rows=1000, cols=max(len(columns), 10))
         if not ws.row_values(1):
             ws.append_row(columns, value_input_option="USER_ENTERED")
         return ws
@@ -127,6 +131,19 @@ def append_match_log(row: dict):
         ws.append_row([row.get(c, "") for c in MATCH_LOG_COLUMNS], value_input_option="USER_ENTERED")
     except Exception as e:
         _gsheets_log_error("append match_logs row", e)
+
+def append_skittle_snapshot(row: dict):
+    """評価実験画面の「配置を記録する」ボタンから、今の配置をskittle_snapshotsシートに追記する
+    （記録中フラグに関係なく常に書き込める。実験者が別セッションから配置だけ記録する用途）"""
+    ws = _gsheets_worksheet("skittle_snapshots", SKITTLE_SNAPSHOT_COLUMNS)
+    if ws is None:
+        return False
+    try:
+        ws.append_row([row.get(c, "") for c in SKITTLE_SNAPSHOT_COLUMNS], value_input_option="USER_ENTERED")
+        return True
+    except Exception as e:
+        _gsheets_log_error("append skittle_snapshots row", e)
+        return False
 
 import math
 import random
@@ -1653,6 +1670,22 @@ else:
             if st.button("⏹ 記録終了", use_container_width=True):
                 exp["recording"] = False
                 st.rerun()
+
+    st.divider()
+    st.caption("実験者がスキットル配置だけを記録する（記録中かどうかに関わらず使えます）")
+    if st.button("📍 配置を記録する", use_container_width=True):
+        coords_json = json.dumps(
+            {n: c for n, c in st.session_state.skittle_m_coords.items() if c}, ensure_ascii=False
+        )
+        ok = append_skittle_snapshot({
+            "ユーザーID": st.session_state.current_player,
+            "タイムスタンプ": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "スキットル配置": coords_json,
+        })
+        if ok:
+            st.toast("配置を記録しました！", icon="📍")
+        else:
+            st.error("記録に失敗しました。Secretsの設定を確認してください。")
 
 st.divider()
 if st.button("ログアウト", use_container_width=True):
