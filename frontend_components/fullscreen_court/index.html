@@ -42,6 +42,28 @@ html,body{width:100%;height:100%;overflow:hidden;background:#f8fafc;touch-action
   z-index:200;
 }
 
+/* ── ドラッグ中の位置表示（吹き出し） ── */
+#drag-tooltip{
+  position:fixed;
+  transform:translate(-50%,-100%);
+  background:#1e293b;color:#fff;
+  font-size:13px;font-weight:700;
+  padding:5px 10px;border-radius:8px;
+  white-space:nowrap;
+  pointer-events:none;
+  z-index:250;
+  display:none;
+  box-shadow:0 3px 10px rgba(0,0,0,.3);
+}
+#drag-tooltip::after{
+  content:'';
+  position:absolute;left:50%;top:100%;
+  transform:translateX(-50%);
+  border:6px solid transparent;
+  border-top-color:#1e293b;
+}
+#drag-tooltip.visible{display:block;}
+
 /* ── 上部バー ── */
 #top-bar{
   position:fixed;top:0;left:0;right:0;height:48px;
@@ -192,6 +214,9 @@ html,body{width:100%;height:100%;overflow:hidden;background:#f8fafc;touch-action
 <!-- ピン層 -->
 <div id="pin-layer"></div>
 
+<!-- ドラッグ中の位置表示 -->
+<div id="drag-tooltip"></div>
+
 <!-- エッジタブ -->
 <div id="palette-tab" onclick="togglePalette()">
   <div class="arrow"></div>
@@ -288,6 +313,21 @@ window.addEventListener('resize', () => {
 });
 
 let drag = null;
+const dragTooltip = document.getElementById('drag-tooltip');
+
+function formatPos(mPt) {
+  const d = mPt.x < 0 ? `左${Math.abs(mPt.x).toFixed(2)}m`
+          : mPt.x > 0 ? `右${mPt.x.toFixed(2)}m` : '中央';
+  return `奥${mPt.y.toFixed(2)}m・${d}`;
+}
+
+function updateDragTooltip(cx, cy) {
+  const svgPt = screenToSvgPt(cx, cy);
+  const mPt = svgToM(svgPt.x, svgPt.y);
+  dragTooltip.textContent = formatPos(mPt);
+  dragTooltip.style.left = cx + 'px';
+  dragTooltip.style.top = (cy - 28) + 'px';
+}
 
 function beginDragFromPalette(n, cx, cy) {
   if (coords[n]) {
@@ -300,6 +340,8 @@ function beginDragFromPalette(n, cx, cy) {
   pinEls[n].style.transform = 'translate(-50%,-50%)';
   pinEls[n].classList.add('dragging');
   drag = {n, el: pinEls[n], startX: cx, startY: cy};
+  dragTooltip.classList.add('visible');
+  updateDragTooltip(cx, cy);
 }
 
 function onPalTouchStart(e) {
@@ -319,6 +361,8 @@ function beginDragFromCourt(n, cx, cy) {
   pinEls[n].style.transform = 'translate(-50%,-50%)';
   pinEls[n].classList.add('dragging');
   drag = {n, el: pinEls[n], startX: cx, startY: cy};
+  dragTooltip.classList.add('visible');
+  updateDragTooltip(cx, cy);
 }
 
 function onCourtTouchStart(e) {
@@ -336,6 +380,7 @@ function onMove(cx, cy) {
   const dx = cx - drag.startX;
   const dy = cy - drag.startY;
   drag.el.style.transform = 'translate(-50%,-50%) translate3d(' + dx + 'px,' + dy + 'px,0)';
+  updateDragTooltip(cx, cy);
 }
 document.addEventListener('touchmove', e => {
   if (drag) { e.preventDefault(); onMove(e.touches[0].clientX, e.touches[0].clientY); }
@@ -348,6 +393,7 @@ function onEnd(cx, cy) {
   drag = null;
   el.classList.remove('dragging');
   el.style.transform = 'translate(-50%,-50%)';
+  dragTooltip.classList.remove('visible');
 
   const svgPt = screenToSvgPt(cx, cy);
   const mPt   = svgToM(svgPt.x, svgPt.y);
