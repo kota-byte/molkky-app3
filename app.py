@@ -166,6 +166,13 @@ def get_obstacle_flags(target_num, skittle_coords, threshold=0.225, skittle_diam
         dist = math.sqrt(dx**2 + dy**2)
 
         if dist <= center_threshold:
+            if dist < 1e-6:
+                # 0.2m刻みのグリッドでは同じマスに重なることがあり、その場合
+                # 方向が定まらない（atan2(0,0)で常に「奥」扱いになってしまう）ため、
+                # 全方位に障害物ありとして扱う
+                for d in flags:
+                    flags[d] = 1
+                continue
             angle = math.degrees(math.atan2(dx, dy))
             if   -22.5 <= angle <  22.5: flags['n']  = 1
             elif  22.5 <= angle <  67.5: flags['ne'] = 1
