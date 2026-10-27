@@ -1133,12 +1133,17 @@ elif page == "🎯 投擲データ記録":
     st.divider()
 
     # 「ガシャ」狙いは特定の1本を狙っていないため「成功」は選べない
-    # （1本だけ倒れた場合は「得点あり失敗」で倒れた番号を記録する）
+    # （1本だけ倒れた場合は「得点あり失敗」で倒れた番号を記録する。内部的な
+    # 値は通常時と同じ「得点あり失敗」のまま、表示ラベルだけ変える）
     result_options = (
         ["得点あり失敗", "ガシャ（複数本倒れた）", "完全ミス"] if is_opening_gasha
         else ["成功", "得点あり失敗", "ガシャ（複数本倒れた）", "完全ミス"]
     )
-    success_val = st.radio("結果", result_options, horizontal=True)
+    _result_labels = {"得点あり失敗": "1本倒れた"} if is_opening_gasha else {}
+    success_val = st.radio(
+        "結果", result_options, horizontal=True,
+        format_func=lambda v: _result_labels.get(v, v),
+    )
     if success_val == "得点あり失敗":
         hit_no = st.selectbox("倒れたスキットル番号", list(range(1, 13)))
     else:
