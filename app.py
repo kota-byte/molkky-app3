@@ -184,13 +184,13 @@ def get_obstacle_flags(target_num, skittle_coords, threshold=0.225, skittle_diam
             elif  -67.5 <= angle <  -22.5: flags['nw'] = 1
 
     if co_located_nums:
-        # 同じマスに重なった本数ぶんだけ、重複しない方位をランダムに割り当てる。
+        # 同じマスに重なった本数ぶんだけ方位をランダムに割り当てる（同じ方位が
+        # 重複して選ばれてもよい＝実際に同じ方向にあった可能性もあるため）。
         # グローバルなrandom状態は使わず、対象＋重なっているスキットル番号で
         # 決まるシードにすることで、同じ配置なら常に同じ結果になるようにする
         # （UI表示のチラつき防止・シミュレーションのキャッシュを壊さないため）
         rng = random.Random((target_num, tuple(sorted(co_located_nums))))
-        pick_count = min(len(co_located_nums), len(dirs))
-        for d in rng.sample(dirs, pick_count):
+        for d in rng.choices(dirs, k=len(co_located_nums)):
             flags[d] = 1
 
     return flags
