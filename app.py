@@ -192,7 +192,7 @@ def get_obstacle_flags(target_num, skittle_coords, threshold=0.225, skittle_diam
         # グローバルなrandom状態は使わず、対象＋重なっているスキットル番号で
         # 決まるシードにすることで、同じ配置なら常に同じ結果になるようにする
         # （UI表示のチラつき防止・シミュレーションのキャッシュを壊さないため）
-        rng = random.Random((target_num, tuple(sorted(co_located_nums))))
+        rng = random.Random(str((target_num, tuple(sorted(co_located_nums)))))
         for d in rng.choices(dirs, k=len(co_located_nums)):
             flags[d] = 1
 
