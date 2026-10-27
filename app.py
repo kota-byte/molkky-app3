@@ -993,23 +993,6 @@ elif page == "🎯 投擲データ記録":
             padding-right: 8px !important;
             padding-top: 5rem !important;
         }
-        .st-key-info_row div[data-testid="stHorizontalBlock"] {
-            display: flex !important;
-            flex-direction: row !important;
-            flex-wrap: nowrap !important;
-            gap: 10px !important;
-            align-items: flex-start !important;
-        }
-        .st-key-info_row div[data-testid="stHorizontalBlock"] > div:nth-child(1) {
-            flex: 1 1 30% !important;
-            max-width: 30% !important;
-            min-width: 0px !important;
-        }
-        .st-key-info_row div[data-testid="stHorizontalBlock"] > div:nth-child(2) {
-            flex: 1 1 70% !important;
-            max-width: 70% !important;
-            min-width: 0px !important;
-        }
         div.stButton > button {
             width: 100% !important;
             height: 55px !important;
@@ -1068,11 +1051,9 @@ elif page == "🎯 投擲データ記録":
 
     st.divider()
 
-    info_row = st.container(key="info_row")
-    col_info1, col_info2 = info_row.columns([1, 2])
-    with col_info1:
-        target_no = st.selectbox(
-            "狙う番号", list(range(1, 13)) + ["ガシャ"], index=11, key="target_no_select")
+    target_no = st.segmented_control(
+        "狙う番号", list(range(1, 13)) + ["ガシャ"],
+        default=12, required=True, key="target_no_select")
     is_opening_gasha = (target_no == "ガシャ")
 
     # 狙う番号を変更したら、マップ上の配置から距離・障害物配置を自動入力する
@@ -1092,8 +1073,7 @@ elif page == "🎯 投擲データ記録":
             else:
                 target_coord_missing = True
 
-    with col_info2:
-        dist = st.slider("距離 (m)", 3.0, 10.0, 3.5, 0.5, key="dist_slider")
+    dist = st.slider("距離 (m)", 3.0, 10.0, 3.5, 0.5, key="dist_slider")
     if target_coord_missing:
         st.caption("⚠️ このスキットルはマップに配置されていません。距離・障害物配置は手動で入力してください。")
 
