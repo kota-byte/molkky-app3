@@ -1095,9 +1095,10 @@ elif page == "🎯 投擲データ記録":
             else:
                 target_coord_missing = True
 
-    dist = st.slider("距離 (m)", 3.0, 10.0, 3.5, 0.5, key="dist_slider")
-    if target_coord_missing:
-        st.caption("⚠️ このスキットルはマップに配置されていません。距離・障害物配置は手動で入力してください。")
+    if not is_opening_gasha:
+        dist = st.slider("距離 (m)", 3.0, 10.0, 3.5, 0.5, key="dist_slider")
+        if target_coord_missing:
+            st.caption("⚠️ このスキットルはマップに配置されていません。距離・障害物配置は手動で入力してください。")
 
     st.divider()
 
