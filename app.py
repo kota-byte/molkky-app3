@@ -1054,8 +1054,9 @@ elif page == "🎯 投擲データ記録":
 
     st.divider()
 
-    # 文字入力のできないプルダウン（ネイティブの<select>）で番号を選ぶ。
-    # st.selectboxは常に文字入力（検索）できてしまうため使わない
+    # 文字入力のできないプルダウンで番号を選ぶ（ネイティブ<select>/<input>は
+    # 使わない。iOS SafariでWebViewのネイティブフォーム部品がキーボード表示に
+    # なってしまう既知の不具合があるため、自前のタップ式リストで実装している）
     if "target_no_value" not in st.session_state:
         st.session_state.target_no_value = 12
     st.caption("狙う番号")
@@ -1066,10 +1067,14 @@ elif page == "🎯 投擲データ記録":
         key="target_select_component",
         default=str(st.session_state.target_no_value),
     )
-    if _target_selected_str is not None:
+    # コンポーネントに渡すvalueは今回のスクリプト実行開始時点のsession_stateなので、
+    # 選択直後の1回だけ戻り値と食い違う。食い違っていたらここでsession_stateを
+    # 更新してrerunし、次の描画でコンポーネント側の表示ラベルも最新値に揃える
+    if _target_selected_str is not None and _target_selected_str != str(st.session_state.target_no_value):
         st.session_state.target_no_value = (
             "ガシャ" if _target_selected_str == "ガシャ" else int(_target_selected_str)
         )
+        st.rerun()
     target_no = st.session_state.target_no_value
     is_opening_gasha = (target_no == "ガシャ")
 
