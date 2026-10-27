@@ -155,9 +155,11 @@ def get_obstacle_flags(target_num, skittle_coords, threshold=0.225, skittle_diam
         return {}
 
     tx, ty = skittle_coords[target_num]
-    flags = {d: 0 for d in ['n','ne','e','se','s','sw','w','nw']}
+    dirs = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw']
+    flags = {d: 0 for d in dirs}
     center_threshold = threshold + skittle_diameter  # 側面間隙間→中心間距離に変換
 
+    co_located_nums = []
     for num, coord in skittle_coords.items():
         if num == target_num or coord is None:
             continue
@@ -167,11 +169,9 @@ def get_obstacle_flags(target_num, skittle_coords, threshold=0.225, skittle_diam
 
         if dist <= center_threshold:
             if dist < 1e-6:
-                # 0.2m刻みのグリッドでは同じマスに重なることがあり、その場合
-                # 方向が定まらない（atan2(0,0)で常に「奥」扱いになってしまう）ため、
-                # 全方位に障害物ありとして扱う
-                for d in flags:
-                    flags[d] = 1
+                # 0.2m刻みのグリッドでは同じマスに重なることがあり、その場合は
+                # 方向が定まらない（atan2(0,0)で常に「奥」扱いになってしまう）
+                co_located_nums.append(num)
                 continue
             angle = math.degrees(math.atan2(dx, dy))
             if   -22.5 <= angle <  22.5: flags['n']  = 1
@@ -182,6 +182,16 @@ def get_obstacle_flags(target_num, skittle_coords, threshold=0.225, skittle_diam
             elif -157.5 <= angle < -112.5: flags['sw'] = 1
             elif -112.5 <= angle <  -67.5: flags['w']  = 1
             elif  -67.5 <= angle <  -22.5: flags['nw'] = 1
+
+    if co_located_nums:
+        # 同じマスに重なった本数ぶんだけ、重複しない方位をランダムに割り当てる。
+        # グローバルなrandom状態は使わず、対象＋重なっているスキットル番号で
+        # 決まるシードにすることで、同じ配置なら常に同じ結果になるようにする
+        # （UI表示のチラつき防止・シミュレーションのキャッシュを壊さないため）
+        rng = random.Random((target_num, tuple(sorted(co_located_nums))))
+        pick_count = min(len(co_located_nums), len(dirs))
+        for d in rng.sample(dirs, pick_count):
+            flags[d] = 1
 
     return flags
 
