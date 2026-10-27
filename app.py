@@ -26,6 +26,9 @@ _player_storage_component = components.declare_component("player_storage", path=
 _SKITTLE_STORAGE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend_components", "skittle_storage")
 _skittle_storage_component = components.declare_component("skittle_storage", path=_SKITTLE_STORAGE_DIR)
 
+_TARGET_SELECT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend_components", "target_select")
+_target_select_component = components.declare_component("target_select", path=_TARGET_SELECT_DIR)
+
 # --- 1. データベース準備 ---
 @st.cache_resource
 def init_db():
@@ -1051,9 +1054,23 @@ elif page == "🎯 投擲データ記録":
 
     st.divider()
 
-    target_no = st.segmented_control(
-        "狙う番号", list(range(1, 13)) + ["ガシャ"],
-        default=12, required=True, key="target_no_select")
+    # 文字入力のできないプルダウン（ネイティブの<select>）で番号を選ぶ。
+    # st.selectboxは常に文字入力（検索）できてしまうため使わない
+    if "target_no_value" not in st.session_state:
+        st.session_state.target_no_value = 12
+    st.caption("狙う番号")
+    _target_options = [str(n) for n in range(1, 13)] + ["ガシャ"]
+    _target_selected_str = _target_select_component(
+        options=_target_options,
+        value=str(st.session_state.target_no_value),
+        key="target_select_component",
+        default=str(st.session_state.target_no_value),
+    )
+    if _target_selected_str is not None:
+        st.session_state.target_no_value = (
+            "ガシャ" if _target_selected_str == "ガシャ" else int(_target_selected_str)
+        )
+    target_no = st.session_state.target_no_value
     is_opening_gasha = (target_no == "ガシャ")
 
     # 狙う番号を変更したら、マップ上の配置から距離・障害物配置を自動入力する

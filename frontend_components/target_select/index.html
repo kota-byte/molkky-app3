@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;font-family:sans-serif;}
+html,body{background:transparent;overflow:hidden;}
+select{
+  width:100%;
+  height:48px;
+  font-size:16px;
+  font-weight:700;
+  color:#FF6B35;
+  background:#FFFFFF;
+  border:2px solid #FF6B35;
+  border-radius:14px;
+  padding:0 12px;
+}
+select:focus{outline:none;}
+</style>
+</head>
+<body>
+<select id="sel"></select>
+<script>
+function sendToStreamlit(type, data) {
+  const outData = Object.assign({ isStreamlitMessage: true, type: type }, data);
+  window.parent.postMessage(outData, "*");
+}
+function setFrameHeight(height) {
+  sendToStreamlit("streamlit:setFrameHeight", { height: height });
+}
+function setComponentValue(value) {
+  sendToStreamlit("streamlit:setComponentValue", { value: value, dataType: "json" });
+}
+
+const sel = document.getElementById('sel');
+sel.addEventListener('change', () => {
+  setComponentValue(sel.value);
+});
+
+function onRender(event) {
+  const args = event.data.args;
+  const options = args.options || [];
+  const value = args.value;
+
+  // 選択肢が変わっていなければ再構築しない（再構築するとフォーカス/開いている
+  // ドロップダウンが毎回閉じてしまうため）
+  const currentOptions = Array.from(sel.options).map(o => o.value);
+  const optionsChanged = currentOptions.length !== options.length ||
+    currentOptions.some((v, i) => v !== options[i]);
+
+  if (optionsChanged) {
+    sel.innerHTML = '';
+    options.forEach(opt => {
+      const o = document.createElement('option');
+      o.value = opt;
+      o.textContent = opt;
+      sel.appendChild(o);
+    });
+  }
+  if (sel.value !== value) {
+    sel.value = value;
+  }
+  setFrameHeight(52);
+}
+
+window.addEventListener('message', event => {
+  if (event.data.type === 'streamlit:render') {
+    onRender(event);
+  }
+});
+
+sendToStreamlit('streamlit:componentReady', { apiVersion: 1 });
+setFrameHeight(52);
+</script>
+</body>
+</html>
