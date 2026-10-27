@@ -1101,9 +1101,7 @@ elif page == "🎯 投擲データ記録":
 
     st.divider()
 
-    if is_opening_gasha:
-        st.caption("☆「ガシャ」＝特定の1本を狙わない投擲（オープニングスローなど）。障害物配置の入力は不要です。")
-    else:
+    if not is_opening_gasha:
         st.subheader("障害物配置")
         st.caption("ターゲット周囲の状況をタップ（前＝自分に近い側）")
 
