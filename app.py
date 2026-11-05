@@ -198,19 +198,27 @@ def get_obstacle_flags(target_num, skittle_coords, threshold=0.225, skittle_diam
 
     return flags
 
-def get_obstacle_proximity_penalty(target_num, skittle_coords,
-                                    close=0.2, near=0.4,
-                                    close_penalty=0.08, near_penalty=0.04):
-    """狙ったスキットルの周囲の密集度に応じて、距離ベースの基準値から
-    差し引くペナルティを返す。方位の一致有無に関係なく、close(m)以内に
-    あるスキットルは「密着」として強いペナルティ、close〜near(m)は「近い」
-    として弱いペナルティを、スキットル1本ごとに加算する（実データが
-    少ない場面でも、密集具合がベース値に反映されるようにするため）"""
+# 0.2m以内（密着）・0.2〜0.4m以内（近接）にある本数ごとのペナルティ。
+# 「1→2本」で急に厳しくなり、「2→3本以上」はそこまで変わらない、という
+# 体感の形に合わせた段階的な値（キーに無い本数＝3本以上はcapの値を使う）
+_CLOSE_PENALTY_BY_COUNT = {0: 0.0, 1: 0.10, 2: 0.35}
+_CLOSE_PENALTY_CAP = 0.50
+_NEAR_PENALTY_BY_COUNT = {0: 0.0, 1: 0.02, 2: 0.15}
+_NEAR_PENALTY_CAP = 0.30
+
+def get_obstacle_proximity_penalty(target_num, skittle_coords, close=0.2, near=0.4):
+    """狙ったスキットルの周囲の密集度（本数）に応じて、距離ベースの基準値
+    から差し引くペナルティを返す。方位は見ず、close(m)以内にある本数と
+    close〜near(m)以内にある本数だけを数える（実データが少ない場面でも、
+    密集具合がベース値に反映されるようにするため）。狙う場面の状況
+    （勝てるか・リカバリー可能か等）は考慮しない＝そこは実データとの
+    ブレンドおよび勝率シミュレーション側に委ねる"""
     if skittle_coords.get(target_num) is None:
         return 0.0
 
     tx, ty = skittle_coords[target_num]
-    penalty = 0.0
+    close_count = 0
+    near_count = 0
     for num, coord in skittle_coords.items():
         if num == target_num or coord is None:
             continue
@@ -218,11 +226,13 @@ def get_obstacle_proximity_penalty(target_num, skittle_coords,
         dy = coord[1] - ty
         dist = math.sqrt(dx**2 + dy**2)
         if dist <= close + 1e-6:
-            penalty += close_penalty
+            close_count += 1
         elif dist <= near + 1e-6:
-            penalty += near_penalty
+            near_count += 1
 
-    return penalty
+    close_penalty = _CLOSE_PENALTY_BY_COUNT.get(close_count, _CLOSE_PENALTY_CAP)
+    near_penalty = _NEAR_PENALTY_BY_COUNT.get(near_count, _NEAR_PENALTY_CAP)
+    return close_penalty + near_penalty
 
 def get_fall_offset():
     """倒れたスキットルの移動量を返す（dx, dy）。
