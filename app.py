@@ -198,23 +198,22 @@ def get_obstacle_flags(target_num, skittle_coords, threshold=0.225, skittle_diam
 
     return flags
 
-# 0.2m以内（密着）・0.2〜0.4m以内（近接）にある本数ごとのペナルティ。
-# 「1→2本」で急に厳しくなり、「2→3本以上」はそこまで変わらない、という
-# 体感の形に合わせた段階的な値（キーに無い本数＝3本以上はcapの値を使う）
+# 0.2m以内（密着）・0.2〜0.4m以内（近接）にある本数ごとのペナルティの
+# 初期値（cold-start用）。「1→2本」で急に厳しくなり、「2→3本以上」は
+# そこまで変わらない、という体感の形に合わせた段階的な値（キーに無い
+# 本数＝3本以上はcapの値を使う）。このプレイヤー自身のデータが同じ本数
+# （密着のみ。近接はDBに記録が無いため常にこの初期値を使う）で十分
+# 貯まれば、get_success_rate内でこちらより実データが優先される
 _CLOSE_PENALTY_BY_COUNT = {0: 0.0, 1: 0.10, 2: 0.35}
 _CLOSE_PENALTY_CAP = 0.50
 _NEAR_PENALTY_BY_COUNT = {0: 0.0, 1: 0.02, 2: 0.15}
 _NEAR_PENALTY_CAP = 0.30
 
-def get_obstacle_proximity_penalty(target_num, skittle_coords, close=0.2, near=0.4):
-    """狙ったスキットルの周囲の密集度（本数）に応じて、距離ベースの基準値
-    から差し引くペナルティを返す。方位は見ず、close(m)以内にある本数と
-    close〜near(m)以内にある本数だけを数える（実データが少ない場面でも、
-    密集具合がベース値に反映されるようにするため）。狙う場面の状況
-    （勝てるか・リカバリー可能か等）は考慮しない＝そこは実データとの
-    ブレンドおよび勝率シミュレーション側に委ねる"""
+def get_obstacle_proximity_counts(target_num, skittle_coords, close=0.2, near=0.4):
+    """狙ったスキットルの周囲にある本数を、close(m)以内（密着）と
+    close〜near(m)以内（近接）に分けて数える。方位は見ない"""
     if skittle_coords.get(target_num) is None:
-        return 0.0
+        return 0, 0
 
     tx, ty = skittle_coords[target_num]
     close_count = 0
@@ -230,9 +229,7 @@ def get_obstacle_proximity_penalty(target_num, skittle_coords, close=0.2, near=0
         elif dist <= near + 1e-6:
             near_count += 1
 
-    close_penalty = _CLOSE_PENALTY_BY_COUNT.get(close_count, _CLOSE_PENALTY_CAP)
-    near_penalty = _NEAR_PENALTY_BY_COUNT.get(near_count, _NEAR_PENALTY_CAP)
-    return close_penalty + near_penalty
+    return close_count, near_count
 
 def get_fall_offset():
     """倒れたスキットルの移動量を返す（dx, dy）。
@@ -304,19 +301,31 @@ def _obstacle_near_mask(df, obstacle_flags):
             mask &= (df[d] == 0)
     return mask
 
-def get_success_rate(dist, obstacle_flags, df, obstacle_penalty=0.0):
+def get_success_rate(dist, obstacle_flags, df, close_count=0, near_count=0):
     """ベース値（距離別）に過去データの実測値を重み付けして混ぜる。
     一致するデータが見つかるまで、以下の順でマッチング条件を緩める：
     1. 距離完全一致 ＋ 障害物パターン完全一致
     2. 距離完全一致 ＋ 障害物は隣接方位も許容
     3. 距離±0.5m ＋ 障害物パターン完全一致
     4. 距離±1.0m ＋ 障害物パターン完全一致
-    5. どれも見つからなければ、距離だけで決まる基準値をそのまま使う
-    どの段階でも、ベース値にはobstacle_penalty（密集度ペナルティ）を
-    差し引いてから使う。実データの重みが大きいほどベース値自体の影響は
-    薄まるが、データが少ない場面ほど密集度がそのまま反映される"""
-    base = BASE_RATE.get(round(dist * 2) / 2, 0.5)
-    base = max(0.05, base - obstacle_penalty)
+    5. どれも見つからなければ、距離だけで決まる基準値から密集度ペナルティ
+       （cold-start用の初期値）を差し引いた値を使う
+    ただし5の初期値も、このプレイヤー自身の「密着本数が同じ」過去データが
+    あれば、その分だけ実データ側に寄せる（近接本数はDB未記録のため常に
+    初期値のまま）。どの段階でも、実データの件数が多いほどベース値側の
+    影響は薄まる＝このプレイヤーのデータが貯まるほど、密集度ペナルティは
+    データに基づいた値へと自然に置き換わっていく"""
+    close_penalty = _CLOSE_PENALTY_BY_COUNT.get(close_count, _CLOSE_PENALTY_CAP)
+    near_penalty = _NEAR_PENALTY_BY_COUNT.get(near_count, _NEAR_PENALTY_CAP)
+    base = max(0.05, BASE_RATE.get(round(dist * 2) / 2, 0.5) - close_penalty - near_penalty)
+
+    same_close_count = df[DIRS].sum(axis=1) == close_count
+    matched_cc = df[same_close_count]
+    n_cc = len(matched_cc)
+    if n_cc > 0:
+        actual_cc_rate = (matched_cc['is_success'] == 1).mean()
+        weight_cc = n_cc / (n_cc + K)
+        base = base * (1 - weight_cc) + actual_cc_rate * weight_cc
 
     dist_exact = df['dist'] == dist
     dist_05 = (df['dist'] - dist).abs() <= 0.5
@@ -363,12 +372,12 @@ def run_simulation(
     def get_rate_for(num, coords_dict):
         """現在の配置に基づいてnum番の成功率を計算（キャッシュ付き）"""
         obs = get_obstacle_flags(num, coords_dict)
-        penalty = get_obstacle_proximity_penalty(num, coords_dict)
+        close_count, near_count = get_obstacle_proximity_counts(num, coords_dict)
         d = round(coords_dict[num][1] / 0.5) * 0.5
         d = max(3.0, min(10.0, d))
-        key = (d, tuple(sorted(obs.items())), round(penalty, 4))
+        key = (d, tuple(sorted(obs.items())), close_count, near_count)
         if key not in rate_memo:
-            rate_memo[key] = get_success_rate(d, obs, df, penalty)
+            rate_memo[key] = get_success_rate(d, obs, df, close_count, near_count)
         return rate_memo[key]
 
     def move_skittle(coords_dict, num):
