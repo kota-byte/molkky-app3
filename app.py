@@ -198,6 +198,32 @@ def get_obstacle_flags(target_num, skittle_coords, threshold=0.225, skittle_diam
 
     return flags
 
+def get_obstacle_proximity_penalty(target_num, skittle_coords,
+                                    close=0.2, near=0.4,
+                                    close_penalty=0.08, near_penalty=0.04):
+    """狙ったスキットルの周囲の密集度に応じて、距離ベースの基準値から
+    差し引くペナルティを返す。方位の一致有無に関係なく、close(m)以内に
+    あるスキットルは「密着」として強いペナルティ、close〜near(m)は「近い」
+    として弱いペナルティを、スキットル1本ごとに加算する（実データが
+    少ない場面でも、密集具合がベース値に反映されるようにするため）"""
+    if skittle_coords.get(target_num) is None:
+        return 0.0
+
+    tx, ty = skittle_coords[target_num]
+    penalty = 0.0
+    for num, coord in skittle_coords.items():
+        if num == target_num or coord is None:
+            continue
+        dx = coord[0] - tx
+        dy = coord[1] - ty
+        dist = math.sqrt(dx**2 + dy**2)
+        if dist <= close + 1e-6:
+            penalty += close_penalty
+        elif dist <= near + 1e-6:
+            penalty += near_penalty
+
+    return penalty
+
 def get_fall_offset():
     """倒れたスキットルの移動量を返す（dx, dy）。
     距離は1m付近にピーク（裾の長い分布）、方向は奥(投擲方向)を中心に左右にブレる"""
@@ -268,15 +294,19 @@ def _obstacle_near_mask(df, obstacle_flags):
             mask &= (df[d] == 0)
     return mask
 
-def get_success_rate(dist, obstacle_flags, df):
+def get_success_rate(dist, obstacle_flags, df, obstacle_penalty=0.0):
     """ベース値（距離別）に過去データの実測値を重み付けして混ぜる。
     一致するデータが見つかるまで、以下の順でマッチング条件を緩める：
     1. 距離完全一致 ＋ 障害物パターン完全一致
     2. 距離完全一致 ＋ 障害物は隣接方位も許容
     3. 距離±0.5m ＋ 障害物パターン完全一致
     4. 距離±1.0m ＋ 障害物パターン完全一致
-    5. どれも見つからなければ、距離だけで決まる基準値をそのまま使う"""
+    5. どれも見つからなければ、距離だけで決まる基準値をそのまま使う
+    どの段階でも、ベース値にはobstacle_penalty（密集度ペナルティ）を
+    差し引いてから使う。実データの重みが大きいほどベース値自体の影響は
+    薄まるが、データが少ない場面ほど密集度がそのまま反映される"""
     base = BASE_RATE.get(round(dist * 2) / 2, 0.5)
+    base = max(0.05, base - obstacle_penalty)
 
     dist_exact = df['dist'] == dist
     dist_05 = (df['dist'] - dist).abs() <= 0.5
@@ -323,11 +353,12 @@ def run_simulation(
     def get_rate_for(num, coords_dict):
         """現在の配置に基づいてnum番の成功率を計算（キャッシュ付き）"""
         obs = get_obstacle_flags(num, coords_dict)
+        penalty = get_obstacle_proximity_penalty(num, coords_dict)
         d = round(coords_dict[num][1] / 0.5) * 0.5
         d = max(3.0, min(10.0, d))
-        key = (d, tuple(sorted(obs.items())))
+        key = (d, tuple(sorted(obs.items())), round(penalty, 4))
         if key not in rate_memo:
-            rate_memo[key] = get_success_rate(d, obs, df)
+            rate_memo[key] = get_success_rate(d, obs, df, penalty)
         return rate_memo[key]
 
     def move_skittle(coords_dict, num):
