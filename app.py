@@ -1589,6 +1589,15 @@ elif page == "🤖 AI戦術提示シミュレーター":
                 _mark_skittle_layout_dirty()
                 st.rerun()
 
+        placed = [(n, c) for n, c in st.session_state.skittle_m_coords.items() if c]
+        if placed:
+            st.write(f"📍 配置済み（{len(placed)}本）:")
+            for pn, (gx, gy) in sorted(placed):
+                d = f"左{abs(gx):.2f}m" if gx < 0 else (f"右{gx:.2f}m" if gx > 0 else "中央")
+                st.caption(f"📌 {pn}番: 奥{gy:.2f}m・{d}")
+        else:
+            st.caption("ピンをドラッグして配置してください。")
+
         st.write("")
         exp_recording = st.session_state.experiment["recording"]
         exp_condition = st.session_state.experiment["condition"]
