@@ -198,16 +198,18 @@ def get_obstacle_flags(target_num, skittle_coords, threshold=0.225, skittle_diam
 
     return flags
 
-# 0.2m以内（密着）・0.2〜0.4m以内（近接）にある本数ごとのペナルティの
-# 初期値（cold-start用）。「1→2本」で急に厳しくなり、「2→3本以上」は
-# そこまで変わらない、という体感の形に合わせた段階的な値（キーに無い
-# 本数＝3本以上はcapの値を使う）。このプレイヤー自身のデータが同じ本数
-# （密着のみ。近接はDBに記録が無いため常にこの初期値を使う）で十分
-# 貯まれば、get_success_rate内でこちらより実データが優先される
+# 0.2m以内（密着）にある本数ごとのペナルティの初期値（cold-start用）。
+# 「1→2本」で急に厳しくなり、「2→3本以上」はそこまで変わらない、という
+# 体感の形に合わせた段階的な値（キーに無い本数＝3本以上はcapの値を使う）。
+# このプレイヤー自身のデータが同じ本数で十分貯まれば、get_success_rate内で
+# こちらより実データが優先される
 _CLOSE_PENALTY_BY_COUNT = {0: 0.0, 1: 0.10, 2: 0.35}
 _CLOSE_PENALTY_CAP = 0.50
-_NEAR_PENALTY_BY_COUNT = {0: 0.0, 1: 0.02, 2: 0.15}
-_NEAR_PENALTY_CAP = 0.30
+
+# 0.2〜0.4m以内（近接）はDBに距離が記録されておらず実データが無いため、
+# 密着側の初期値（同じ本数のもの）を単純に割り引いて使う。近接は密着ほど
+# 深刻ではない、という前提の係数
+_NEAR_PENALTY_FACTOR = 0.5
 
 def get_obstacle_proximity_counts(target_num, skittle_coords, close=0.2, near=0.4):
     """狙ったスキットルの周囲にある本数を、close(m)以内（密着）と
@@ -316,7 +318,7 @@ def get_success_rate(dist, obstacle_flags, df, close_count=0, near_count=0):
     影響は薄まる＝このプレイヤーのデータが貯まるほど、密集度ペナルティは
     データに基づいた値へと自然に置き換わっていく"""
     close_penalty = _CLOSE_PENALTY_BY_COUNT.get(close_count, _CLOSE_PENALTY_CAP)
-    near_penalty = _NEAR_PENALTY_BY_COUNT.get(near_count, _NEAR_PENALTY_CAP)
+    near_penalty = _CLOSE_PENALTY_BY_COUNT.get(near_count, _CLOSE_PENALTY_CAP) * _NEAR_PENALTY_FACTOR
     base = max(0.05, BASE_RATE.get(round(dist * 2) / 2, 0.5) - close_penalty - near_penalty)
 
     same_close_count = df[DIRS].sum(axis=1) == close_count
