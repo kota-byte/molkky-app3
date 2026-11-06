@@ -233,6 +233,55 @@ def get_obstacle_proximity_counts(target_num, skittle_coords, close=0.2, near=0.
 
     return close_count, near_count
 
+def get_obstacle_info(target_num, skittle_coords, threshold=0.225, skittle_diameter=0.059,
+                       close=0.2, near=0.4):
+    """get_obstacle_flags()とget_obstacle_proximity_counts()を1回の走査で
+    まとめて計算する版（シミュレーションのホットパス用）。
+    戻り値は (flags辞書, close_count, near_count)"""
+    if skittle_coords[target_num] is None:
+        return {}, 0, 0
+
+    tx, ty = skittle_coords[target_num]
+    dirs = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw']
+    flags = {d: 0 for d in dirs}
+    center_threshold = threshold + skittle_diameter
+    close_count = 0
+    near_count = 0
+
+    co_located_nums = []
+    for num, coord in skittle_coords.items():
+        if num == target_num or coord is None:
+            continue
+        dx = coord[0] - tx
+        dy = coord[1] - ty
+        dist = math.sqrt(dx**2 + dy**2)
+
+        if dist <= close + 1e-6:
+            close_count += 1
+        elif dist <= near + 1e-6:
+            near_count += 1
+
+        if dist <= center_threshold:
+            if dist < 1e-6:
+                co_located_nums.append(num)
+                continue
+            angle = math.degrees(math.atan2(dx, dy))
+            if   -22.5 <= angle <  22.5: flags['n']  = 1
+            elif  22.5 <= angle <  67.5: flags['ne'] = 1
+            elif  67.5 <= angle < 112.5: flags['e']  = 1
+            elif 112.5 <= angle < 157.5: flags['se'] = 1
+            elif angle >= 157.5 or angle < -157.5: flags['s'] = 1
+            elif -157.5 <= angle < -112.5: flags['sw'] = 1
+            elif -112.5 <= angle <  -67.5: flags['w']  = 1
+            elif  -67.5 <= angle <  -22.5: flags['nw'] = 1
+
+    if co_located_nums:
+        rng = random.Random(str((target_num, tuple(sorted(co_located_nums)))))
+        for d in rng.choices(dirs, k=len(co_located_nums)):
+            flags[d] = 1
+
+    return flags, close_count, near_count
+
 def get_fall_offset():
     """倒れたスキットルの移動量を返す（dx, dy）。
     距離は1m付近にピーク（裾の長い分布）、方向は奥(投擲方向)を中心に左右にブレる"""
@@ -356,7 +405,7 @@ def get_success_rate(dist, obstacle_flags, df, close_count=0, near_count=0):
 def run_simulation(
     my_score, my_miss, opponents,
     skittle_coords, df,
-    n_sim=2000
+    n_sim=500
 ):
     base_active = {n: c for n, c in skittle_coords.items() if c is not None}
     if not base_active:
@@ -366,8 +415,7 @@ def run_simulation(
 
     def get_rate_for(num, coords_dict):
         """現在の配置に基づいてnum番の成功率を計算（キャッシュ付き）"""
-        obs = get_obstacle_flags(num, coords_dict)
-        close_count, near_count = get_obstacle_proximity_counts(num, coords_dict)
+        obs, close_count, near_count = get_obstacle_info(num, coords_dict)
         d = round(coords_dict[num][1] / 0.5) * 0.5
         d = max(3.0, min(10.0, d))
         key = (d, tuple(sorted(obs.items())), close_count, near_count)
@@ -385,18 +433,24 @@ def run_simulation(
         new_y = max(0.1, min(10.0, y + dy))
         coords_dict[num] = (new_x, new_y)
 
-    def pick_target(score, active_now, coords_dict):
+    def pick_target(score, active_now, coords_dict, shortlist_size=4):
         """残り得点への近さ×成功率が最大になる番号を選ぶ（近いだけで
         成功率がほぼ0の番号を選んでしまわないようにするため）。
+        成功率の計算（障害物の形状判定＋過去データ照合）は本数が多いと
+        重いので、まず近さだけで候補をshortlist_size件に絞ってから、
+        その中だけ成功率込みで比較する（全件を毎回計算しない高速化）。
         戻り値は (選んだ番号, その成功率)"""
+        def closeness_of(n):
+            return abs(score + n - 50) if score + n <= 50 else abs(score + n - 25 - 50)
+        shortlist = sorted(active_now, key=closeness_of)[:shortlist_size]
+
         def combined_score(n):
-            closeness = abs(score + n - 50) if score + n <= 50 else abs(score + n - 25 - 50)
             rate = get_rate_for(n, coords_dict)
-            return rate / (1 + closeness), rate
+            return rate / (1 + closeness_of(n)), rate
         best_n = None
         best_combined = -1.0
         best_rate = 0.0
-        for n in active_now:
+        for n in shortlist:
             combined, rate = combined_score(n)
             if combined > best_combined:
                 best_combined = combined
@@ -1638,7 +1692,7 @@ elif page == "🤖 AI戦術提示シミュレーター":
                             opponents=st.session_state.opponents,
                             skittle_coords=st.session_state.skittle_m_coords,
                             df=df,
-                            n_sim=2000
+                            n_sim=500
                         )
 
                     top3 = sorted(results.items(), key=lambda x: x[1], reverse=True)[:3] if results else []
