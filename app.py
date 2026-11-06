@@ -358,13 +358,6 @@ def run_simulation(
     skittle_coords, df,
     n_sim=2000
 ):
-    OPP_RATE = {
-        3.0:0.70, 3.5:0.65, 4.0:0.60, 4.5:0.55,
-        5.0:0.50, 5.5:0.45, 6.0:0.40, 6.5:0.35,
-        7.0:0.30, 7.5:0.25, 8.0:0.20, 8.5:0.15,
-        9.0:0.12, 9.5:0.10, 10.0:0.08
-    }
-
     base_active = {n: c for n, c in skittle_coords.items() if c is not None}
     if not base_active:
         return {}
@@ -476,13 +469,15 @@ def run_simulation(
                         if mm >= 3:
                             break
                 else:
-                    # 相手のターン（turn_idx-1番目の相手）
+                    # 相手のターン（turn_idx-1番目の相手）。狙う番号の決め方・
+                    # 成功率の計算方法は自分と同じロジックを使う（相手だけ
+                    # 無戦略・障害物無視という不自然な有利/不利が出ないように）
                     opp = opp_states[turn_idx - 1]
-                    opp_target = random.choice(active_now)
-                    coord = sim_coords[opp_target]
-                    opp_dist = round(coord[1] / 0.5) * 0.5
-                    opp_dist = max(3.0, min(10.0, opp_dist))
-                    opp_rate = OPP_RATE.get(opp_dist, 0.5)
+                    opp_score = opp["score"]
+                    opp_target = min(active_now,
+                                      key=lambda n: abs(opp_score + n - 50) if opp_score + n <= 50
+                                      else abs(opp_score + n - 25 - 50))
+                    opp_rate = get_rate_for(opp_target, sim_coords)
 
                     r3 = random.random()
                     if r3 < opp_rate:
