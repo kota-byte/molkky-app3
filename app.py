@@ -385,6 +385,25 @@ def run_simulation(
         new_y = max(0.1, min(10.0, y + dy))
         coords_dict[num] = (new_x, new_y)
 
+    def pick_target(score, active_now, coords_dict):
+        """残り得点への近さ×成功率が最大になる番号を選ぶ（近いだけで
+        成功率がほぼ0の番号を選んでしまわないようにするため）。
+        戻り値は (選んだ番号, その成功率)"""
+        def combined_score(n):
+            closeness = abs(score + n - 50) if score + n <= 50 else abs(score + n - 25 - 50)
+            rate = get_rate_for(n, coords_dict)
+            return rate / (1 + closeness), rate
+        best_n = None
+        best_combined = -1.0
+        best_rate = 0.0
+        for n in active_now:
+            combined, rate = combined_score(n)
+            if combined > best_combined:
+                best_combined = combined
+                best_n = n
+                best_rate = rate
+        return best_n, best_rate
+
     results = {}
 
     for target_num in base_active:
@@ -438,10 +457,7 @@ def run_simulation(
 
                 if turn_idx == 0:
                     # 自分のターン
-                    best = min(active_now,
-                               key=lambda n: abs(ms + n - 50) if ms + n <= 50
-                               else abs(ms + n - 25 - 50))
-                    rate2 = get_rate_for(best, sim_coords)
+                    best, rate2 = pick_target(ms, active_now, sim_coords)
 
                     r2 = random.random()
                     if r2 < rate2:
@@ -473,11 +489,7 @@ def run_simulation(
                     # 成功率の計算方法は自分と同じロジックを使う（相手だけ
                     # 無戦略・障害物無視という不自然な有利/不利が出ないように）
                     opp = opp_states[turn_idx - 1]
-                    opp_score = opp["score"]
-                    opp_target = min(active_now,
-                                      key=lambda n: abs(opp_score + n - 50) if opp_score + n <= 50
-                                      else abs(opp_score + n - 25 - 50))
-                    opp_rate = get_rate_for(opp_target, sim_coords)
+                    opp_target, opp_rate = pick_target(opp["score"], active_now, sim_coords)
 
                     r3 = random.random()
                     if r3 < opp_rate:
