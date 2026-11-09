@@ -359,9 +359,11 @@ def get_success_rate(dist, obstacle_flags, df, close_count=0, near_count=0):
     2. 距離完全一致 ＋ 障害物は隣接方位も許容
     3. 距離±0.5m ＋ 障害物パターン完全一致
     4. 距離±1.0m ＋ 障害物パターン完全一致
-    5. どれも見つからなければ、距離だけで決まる基準値から密集度ペナルティ
+    5. 距離完全一致（障害物パターンは問わない）＝ 距離が成功率への影響が
+       一番大きいため、障害物条件を諦めてでも距離の一致を優先する
+    6. どれも見つからなければ、距離だけで決まる基準値から密集度ペナルティ
        （cold-start用の初期値）を差し引いた値を使う
-    ただし5の初期値も、このプレイヤー自身の「密着本数が同じ」過去データが
+    ただし6の初期値も、このプレイヤー自身の「密着本数が同じ」過去データが
     あれば、その分だけ実データ側に寄せる（近接本数はDB未記録のため常に
     初期値のまま）。どの段階でも、実データの件数が多いほどベース値側の
     影響は薄まる＝このプレイヤーのデータが貯まるほど、密集度ペナルティは
@@ -389,6 +391,7 @@ def get_success_rate(dist, obstacle_flags, df, close_count=0, near_count=0):
         dist_exact & obstacle_near,
         dist_05 & obstacle_exact,
         dist_10 & obstacle_exact,
+        dist_exact,
     ]
 
     for stage_mask in stages:
