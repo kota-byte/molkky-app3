@@ -298,8 +298,23 @@ def get_fall_offset():
 
 # 「得点あり失敗」のうち、別の1本だけに当たるか、複数本まとめて倒れる
 # 「ガシャ」（本数が得点）になるかの比率。ガシャ記録機能を追加した
-# 2026-10-20以降の実データ（is_success=2または3）から算出（約31%）
-_GASHA_PROB_GIVEN_PARTIAL = 0.31
+# 2026-10-20以降の実データ（is_success=2または3）から算出すると全体では
+# 約31%だが、ガシャの方が単独より密集度(flag_count)の平均が1.5倍ほど
+# 高い傾向があったため、1.0m以内の候補数に応じて段階的に変える
+# （cold-start用の仮値。サンプルが少ないため密着/近接ペナルティと同様、
+# 今後データが増えたら見直す前提）
+_GASHA_PROB_LOW = 0.20   # 0〜2本
+_GASHA_PROB_MID = 0.31   # 3〜5本（既存の全体平均と同じ水準）
+_GASHA_PROB_HIGH = 0.45  # 6本以上
+
+def _gasha_prob_for_candidate_count(n):
+    if n <= 2:
+        return _GASHA_PROB_LOW
+    elif n <= 5:
+        return _GASHA_PROB_MID
+    else:
+        return _GASHA_PROB_HIGH
+
 # 実際に記録されたガシャの倒れた本数の内訳（2026-10-20以降、テストデータ除く）
 _GASHA_COUNT_WEIGHTS = {2: 8, 3: 2, 4: 2}
 
@@ -315,10 +330,11 @@ def _weighted_sample_without_replacement(candidates, weights, k):
     return chosen
 
 def resolve_partial_hit(target_num, coords_dict, move_fn):
-    """「得点あり失敗」の分岐（15%）の中身を解決する。実データ上、この
-    うち約31%は複数本まとめて倒れる「ガシャ」（倒した本数が得点）、
-    残り69%は別の1本だけに当たる（その番号が得点）。倒れたスキットルは
-    move_fnで移動させる。戻り値は加算すべき得点（候補が無ければ0）"""
+    """「得点あり失敗」の分岐（15%）の中身を解決する。別の1本だけに
+    当たるか、複数本まとめて倒れる「ガシャ」（倒した本数が得点）になる
+    かは、1.0m以内の候補数が多いほど起きやすいという実データの傾向に
+    合わせて段階的に確率を変える。倒れたスキットルはmove_fnで移動させる。
+    戻り値は加算すべき得点（候補が無ければ0）"""
     target_coord = coords_dict.get(target_num)
     if target_coord is None:
         return 0
@@ -336,7 +352,8 @@ def resolve_partial_hit(target_num, coords_dict, move_fn):
     if not candidates:
         return 0
 
-    if random.random() < _GASHA_PROB_GIVEN_PARTIAL:
+    gasha_prob = _gasha_prob_for_candidate_count(len(candidates))
+    if random.random() < gasha_prob:
         count = random.choices(
             list(_GASHA_COUNT_WEIGHTS.keys()),
             weights=list(_GASHA_COUNT_WEIGHTS.values()), k=1
