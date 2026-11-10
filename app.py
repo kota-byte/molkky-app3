@@ -408,7 +408,7 @@ def get_success_rate(dist, obstacle_flags, df, close_count=0, near_count=0):
 def run_simulation(
     my_score, my_miss, opponents,
     skittle_coords, df,
-    n_sim=300
+    n_sim=400
 ):
     base_active = {n: c for n, c in skittle_coords.items() if c is not None}
     if not base_active:
@@ -1695,7 +1695,7 @@ elif page == "🤖 AI戦術提示シミュレーター":
                             opponents=st.session_state.opponents,
                             skittle_coords=st.session_state.skittle_m_coords,
                             df=df,
-                            n_sim=300
+                            n_sim=400
                         )
 
                     top3 = sorted(results.items(), key=lambda x: x[1], reverse=True)[:3] if results else []
