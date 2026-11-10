@@ -296,12 +296,32 @@ def get_fall_offset():
     dy = distance * math.cos(angle_rad)
     return dx, dy
 
-def choose_unintended_hit(target_num, coords_dict, max_dist=1.0):
-    """得点あり失敗時に誤って倒れるスキットルを、距離に応じた重み付きで選ぶ
-    max_dist: この距離以内のスキットルのみ候補とする"""
+# 「得点あり失敗」のうち、別の1本だけに当たるか、複数本まとめて倒れる
+# 「ガシャ」（本数が得点）になるかの比率。ガシャ記録機能を追加した
+# 2026-10-20以降の実データ（is_success=2または3）から算出（約31%）
+_GASHA_PROB_GIVEN_PARTIAL = 0.31
+# 実際に記録されたガシャの倒れた本数の内訳（2026-10-20以降、テストデータ除く）
+_GASHA_COUNT_WEIGHTS = {2: 8, 3: 2, 4: 2}
+
+def _weighted_sample_without_replacement(candidates, weights, k):
+    candidates = list(candidates)
+    weights = list(weights)
+    chosen = []
+    for _ in range(min(k, len(candidates))):
+        picked = random.choices(candidates, weights=weights, k=1)[0]
+        idx = candidates.index(picked)
+        chosen.append(candidates.pop(idx))
+        weights.pop(idx)
+    return chosen
+
+def resolve_partial_hit(target_num, coords_dict, move_fn):
+    """「得点あり失敗」の分岐（15%）の中身を解決する。実データ上、この
+    うち約31%は複数本まとめて倒れる「ガシャ」（倒した本数が得点）、
+    残り69%は別の1本だけに当たる（その番号が得点）。倒れたスキットルは
+    move_fnで移動させる。戻り値は加算すべき得点（候補が無ければ0）"""
     target_coord = coords_dict.get(target_num)
     if target_coord is None:
-        return None
+        return 0
 
     candidates = []
     weights = []
@@ -309,13 +329,26 @@ def choose_unintended_hit(target_num, coords_dict, max_dist=1.0):
         if n == target_num or c is None:
             continue
         dist = math.sqrt((c[0]-target_coord[0])**2 + (c[1]-target_coord[1])**2)
-        if dist <= max_dist:
+        if dist <= 1.0:
             candidates.append(n)
             weights.append(1.0 / (dist + 0.1))  # 近いほど重みが大きい
 
     if not candidates:
-        return None
-    return random.choices(candidates, weights=weights, k=1)[0]
+        return 0
+
+    if random.random() < _GASHA_PROB_GIVEN_PARTIAL:
+        count = random.choices(
+            list(_GASHA_COUNT_WEIGHTS.keys()),
+            weights=list(_GASHA_COUNT_WEIGHTS.values()), k=1
+        )[0]
+        fallen = _weighted_sample_without_replacement(candidates, weights, count)
+        for n in fallen:
+            move_fn(coords_dict, n)
+        return len(fallen)
+    else:
+        hit = random.choices(candidates, weights=weights, k=1)[0]
+        move_fn(coords_dict, hit)
+        return hit
 
 BASE_RATE = {
     3.0: 0.70, 3.5: 0.65, 4.0: 0.60, 4.5: 0.55,
@@ -491,10 +524,9 @@ def run_simulation(
                     ms = 25
             elif result < my_rate + 0.15:
                 mm = 0
-                hit = choose_unintended_hit(target_num, sim_coords)
-                if hit is not None:
-                    ms += hit
-                    move_skittle(sim_coords, hit)
+                delta = resolve_partial_hit(target_num, sim_coords, move_skittle)
+                if delta > 0:
+                    ms += delta
                     if ms == 50:
                         win_count += 1
                         continue
@@ -531,10 +563,9 @@ def run_simulation(
                             ms = 25
                     elif r2 < rate2 + 0.15:
                         mm = 0
-                        hit2 = choose_unintended_hit(best, sim_coords)
-                        if hit2 is not None:
-                            ms += hit2
-                            move_skittle(sim_coords, hit2)
+                        delta2 = resolve_partial_hit(best, sim_coords, move_skittle)
+                        if delta2 > 0:
+                            ms += delta2
                             if ms == 50:
                                 win_count += 1
                                 break
@@ -562,10 +593,9 @@ def run_simulation(
                             opp["score"] = 25
                     elif r3 < opp_rate + 0.15:
                         opp["miss"] = 0
-                        hit3 = choose_unintended_hit(opp_target, sim_coords)
-                        if hit3 is not None:
-                            opp["score"] += hit3
-                            move_skittle(sim_coords, hit3)
+                        delta3 = resolve_partial_hit(opp_target, sim_coords, move_skittle)
+                        if delta3 > 0:
+                            opp["score"] += delta3
                             if opp["score"] == 50:
                                 break
                             elif opp["score"] > 50:
