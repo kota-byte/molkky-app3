@@ -505,11 +505,10 @@ def run_simulation(
                 if mm >= 3:
                     continue
 
-            # 以降のターン
-           # 以降のターン
+            # 以降のターン（自分の評価対象の投擲の直後なので、次は相手の番から始まる）
             MAX_TURNS = 80
             opp_states = [{"score": o["score"], "miss": o["miss"]} for o in opponents]
-            turn_idx = 0  # 0=自分、1=相手1、2=相手2...
+            turn_idx = 1  # 0=自分、1=相手1、2=相手2...
 
             for _ in range(MAX_TURNS):
                 active_now = [n for n, c in sim_coords.items() if c is not None]
