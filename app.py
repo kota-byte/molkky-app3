@@ -151,6 +151,19 @@ def append_skittle_snapshot(row: dict):
 import math
 import random
 
+def _assign_colocated_dirs(target_num, co_located_nums, flags, dirs):
+    """同じマスに重なった本数ぶんだけ方位を割り当てる（同じ方位が重複して
+    選ばれてもよい＝実際に同じ方向にあった可能性もあるため）。対象＋重なって
+    いるスキットル番号だけで決まる、純粋な整数演算の決定論的な割り当て
+    （同じ配置なら常に同じ結果になる。random.Random()はホットパスで毎回
+    インスタンス生成するコストが無視できないため使わない）"""
+    seed = target_num
+    for num in sorted(co_located_nums):
+        seed = (seed * 1000003 + num) & 0xFFFFFFFF
+    for i in range(len(co_located_nums)):
+        idx = (seed + i * 2654435761) % 8
+        flags[dirs[idx]] = 1
+
 def get_obstacle_flags(target_num, skittle_coords, threshold=0.225, skittle_diameter=0.059):
     """狙ったスキットルの周囲の障害物フラグを返す
     threshold: スキットル側面同士の隙間の閾値（デフォルト22.5cm）"""
@@ -187,14 +200,7 @@ def get_obstacle_flags(target_num, skittle_coords, threshold=0.225, skittle_diam
             elif  -67.5 <= angle <  -22.5: flags['nw'] = 1
 
     if co_located_nums:
-        # 同じマスに重なった本数ぶんだけ方位をランダムに割り当てる（同じ方位が
-        # 重複して選ばれてもよい＝実際に同じ方向にあった可能性もあるため）。
-        # グローバルなrandom状態は使わず、対象＋重なっているスキットル番号で
-        # 決まるシードにすることで、同じ配置なら常に同じ結果になるようにする
-        # （UI表示のチラつき防止・シミュレーションのキャッシュを壊さないため）
-        rng = random.Random(str((target_num, tuple(sorted(co_located_nums)))))
-        for d in rng.choices(dirs, k=len(co_located_nums)):
-            flags[d] = 1
+        _assign_colocated_dirs(target_num, co_located_nums, flags, dirs)
 
     return flags
 
@@ -276,9 +282,7 @@ def get_obstacle_info(target_num, skittle_coords, threshold=0.225, skittle_diame
             elif  -67.5 <= angle <  -22.5: flags['nw'] = 1
 
     if co_located_nums:
-        rng = random.Random(str((target_num, tuple(sorted(co_located_nums)))))
-        for d in rng.choices(dirs, k=len(co_located_nums)):
-            flags[d] = 1
+        _assign_colocated_dirs(target_num, co_located_nums, flags, dirs)
 
     return flags, close_count, near_count
 
@@ -408,7 +412,7 @@ def get_success_rate(dist, obstacle_flags, df, close_count=0, near_count=0):
 def run_simulation(
     my_score, my_miss, opponents,
     skittle_coords, df,
-    n_sim=400
+    n_sim=800
 ):
     base_active = {n: c for n, c in skittle_coords.items() if c is not None}
     if not base_active:
@@ -1695,7 +1699,7 @@ elif page == "🤖 AI戦術提示シミュレーター":
                             opponents=st.session_state.opponents,
                             skittle_coords=st.session_state.skittle_m_coords,
                             df=df,
-                            n_sim=400
+                            n_sim=800
                         )
 
                     top3 = sorted(results.items(), key=lambda x: x[1], reverse=True)[:3] if results else []
