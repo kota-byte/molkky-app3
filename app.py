@@ -469,10 +469,17 @@ def run_simulation(
         return {}
 
     rate_memo = {}
+    # 盤面（coords_dict）が変わらない間、同じ番号を何度問い合わせても
+    # 幾何情報（障害物フラグ・密着/近接本数）は同じになる。1手先読みで
+    # 同じ候補のレートを何度も参照するため、盤面が動くまでキャッシュする
+    # （move_skittleで駒が動いたら必ずクリアする）
+    geom_cache = {}
 
     def get_rate_for(num, coords_dict):
         """現在の配置に基づいてnum番の成功率を計算（キャッシュ付き）"""
-        obs, close_count, near_count = get_obstacle_info(num, coords_dict)
+        if num not in geom_cache:
+            geom_cache[num] = get_obstacle_info(num, coords_dict)
+        obs, close_count, near_count = geom_cache[num]
         d = round(coords_dict[num][1] / 0.5) * 0.5
         d = max(3.0, min(10.0, d))
         key = (d, tuple(sorted(obs.items())), close_count, near_count)
@@ -489,6 +496,7 @@ def run_simulation(
         new_x = max(-2.0, min(2.0, x + dx))
         new_y = max(0.1, min(10.0, y + dy))
         coords_dict[num] = (new_x, new_y)
+        geom_cache.clear()
 
     def _greedy_value(score, active_now, coords_dict, shortlist_size=4):
         """先読み無しの単純な評価値（近さ×成功率の最大値）。1手先読みの
@@ -549,6 +557,7 @@ def run_simulation(
         for _ in range(n_sim):
             # 各試行ごとに座標をコピー（独立した盤面で進行）
             sim_coords = {n: c for n, c in skittle_coords.items()}
+            geom_cache.clear()
 
             ms = my_score
             mm = my_miss
