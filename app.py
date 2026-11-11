@@ -490,27 +490,51 @@ def run_simulation(
         new_y = max(0.1, min(10.0, y + dy))
         coords_dict[num] = (new_x, new_y)
 
+    def _greedy_value(score, active_now, coords_dict, shortlist_size=4):
+        """先読み無しの単純な評価値（近さ×成功率の最大値）。1手先読みの
+        「次の局面がどれくらい良さそうか」を安く見積もるための補助関数"""
+        if not active_now:
+            return 0.0
+        def closeness_of(n):
+            return abs(score + n - 50) if score + n <= 50 else abs(score + n - 25 - 50)
+        shortlist = sorted(active_now, key=closeness_of)[:shortlist_size]
+        best = -1.0
+        for n in shortlist:
+            c = get_rate_for(n, coords_dict) / (1 + closeness_of(n))
+            if c > best:
+                best = c
+        return best
+
     def pick_target(score, active_now, coords_dict, shortlist_size=4):
-        """残り得点への近さ×成功率が最大になる番号を選ぶ（近いだけで
-        成功率がほぼ0の番号を選んでしまわないようにするため）。
-        成功率の計算（障害物の形状判定＋過去データ照合）は本数が多いと
-        重いので、まず近さだけで候補をshortlist_size件に絞ってから、
-        その中だけ成功率込みで比較する（全件を毎回計算しない高速化）。
+        """1手先読みで番号を選ぶ。候補ごとに「成功した場合」「外した場合」
+        それぞれの次局面のだいたいの良さ（_greedy_value、先読み無し）を
+        見積もり、成功率で重み付けした期待値が一番高い候補を選ぶ。
+        単純な「近さ×成功率」だけだと、残り点数の数字の相性次第で
+        バーストしやすい手を選んでしまうことがあったため。
+        成功率の計算は重いので、まず近さだけで候補をshortlist_size件に
+        絞ってから、その中だけ先読み込みで比較する（高速化）。
         戻り値は (選んだ番号, その成功率)"""
         def closeness_of(n):
             return abs(score + n - 50) if score + n <= 50 else abs(score + n - 25 - 50)
         shortlist = sorted(active_now, key=closeness_of)[:shortlist_size]
 
-        def combined_score(n):
-            rate = get_rate_for(n, coords_dict)
-            return rate / (1 + closeness_of(n)), rate
         best_n = None
-        best_combined = -1.0
+        best_ev = -1.0
         best_rate = 0.0
         for n in shortlist:
-            combined, rate = combined_score(n)
-            if combined > best_combined:
-                best_combined = combined
+            rate = get_rate_for(n, coords_dict)
+            new_score = score + n
+            if new_score == 50:
+                value_success = 10.0  # 即勝ちは最優先
+            else:
+                if new_score > 50:
+                    new_score = 25
+                remaining_active = [m for m in active_now if m != n]
+                value_success = _greedy_value(new_score, remaining_active, coords_dict, shortlist_size)
+            value_miss = _greedy_value(score, active_now, coords_dict, shortlist_size)
+            ev = rate * value_success + (1 - rate) * value_miss
+            if ev > best_ev:
+                best_ev = ev
                 best_n = n
                 best_rate = rate
         return best_n, best_rate
