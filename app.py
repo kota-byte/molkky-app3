@@ -883,9 +883,10 @@ def _reset_experiment_session():
     st.session_state.pending_throw_snapshot = {}
 
 def _reset_match_counters():
+    """試合番号・カウンターをリセットする。条件（あり/なし）は自動で
+    切り替えず、画面のラジオボタンで次の試合の条件を選んでもらう"""
     exp = st.session_state.experiment
     exp["match_number"] += 1
-    exp["condition"] = "アプリなし" if exp["condition"] == "アプリあり" else "アプリあり"
     exp["throw_count"] = 0
     exp["my_bounce_count"] = 0
     exp["opp_bounce_count"] = 0
