@@ -517,6 +517,9 @@ def run_simulation(
         def closeness_of(n):
             return abs(score + n - 50) if score + n <= 50 else abs(score + n - 25 - 50)
         shortlist = sorted(active_now, key=closeness_of)[:shortlist_size]
+        # 外した場合の評価値はどの候補を選んでも同じ（スコア・盤面が
+        # 変わらないため）なので、候補ループの外で1回だけ計算する
+        value_miss = _greedy_value(score, active_now, coords_dict, shortlist_size)
 
         best_n = None
         best_ev = -1.0
@@ -531,7 +534,6 @@ def run_simulation(
                     new_score = 25
                 remaining_active = [m for m in active_now if m != n]
                 value_success = _greedy_value(new_score, remaining_active, coords_dict, shortlist_size)
-            value_miss = _greedy_value(score, active_now, coords_dict, shortlist_size)
             ev = rate * value_success + (1 - rate) * value_miss
             if ev > best_ev:
                 best_ev = ev
