@@ -315,6 +315,11 @@ def _gasha_prob_for_candidate_count(n):
     else:
         return _GASHA_PROB_HIGH
 
+# 投げた棒が奥方向へ流れる力を持ったまま進むため、狙った的より奥にある
+# 候補の方が巻き込まれやすい、という物理的な直感に基づく仮の係数
+# （実データでの裏付けは無い）
+_COLLATERAL_DIRECTION_FACTOR = 0.5
+
 # 実際に記録されたガシャの倒れた本数の内訳（2026-10-20以降、テストデータ除く）
 _GASHA_COUNT_WEIGHTS = {2: 8, 3: 2, 4: 2}
 
@@ -344,10 +349,18 @@ def resolve_partial_hit(target_num, coords_dict, move_fn):
     for n, c in coords_dict.items():
         if n == target_num or c is None:
             continue
-        dist = math.sqrt((c[0]-target_coord[0])**2 + (c[1]-target_coord[1])**2)
+        dx = c[0] - target_coord[0]
+        dy = c[1] - target_coord[1]
+        dist = math.sqrt(dx**2 + dy**2)
         if dist <= 1.0:
             candidates.append(n)
-            weights.append(1.0 / (dist + 0.1))  # 近いほど重みが大きい
+            # 近いほど重みが大きい。投げた棒は奥方向へ進む力を持ったまま
+            # 流れていくため、狙った的より奥にある候補ほど巻き込まれ
+            # やすく、手前にある候補ほど巻き込まれにくいという物理的な
+            # 直感を、角度成分(dy/dist、奥向きで+1・手前向きで-1)による
+            # 補正として加える（実データでの裏付けは無い仮の係数）
+            direction_mult = 1.0 + _COLLATERAL_DIRECTION_FACTOR * (dy / dist if dist > 0 else 0)
+            weights.append((1.0 / (dist + 0.1)) * direction_mult)
 
     if not candidates:
         return 0
