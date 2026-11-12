@@ -935,10 +935,16 @@ with st.expander("🔗 盤面を共有する相手（任意）", expanded=False)
 
 with st.container(key="menu_switch_row"):
     _page_options = ["🎯 投擲データ記録", "🤖 AI戦術提示シミュレーター", "📋 評価実験"]
+    _page_nav_labels = {
+        "🎯 投擲データ記録": "🎯\n記録",
+        "🤖 AI戦術提示シミュレーター": "🤖\nシミュ",
+        "📋 評価実験": "📋\n実験",
+    }
     _current_page = st.session_state.get('_page', _page_options[0])
     page = st.radio(
         "メニューを切り替え",
         _page_options,
+        format_func=lambda opt: _page_nav_labels[opt],
         horizontal=True,
         index=_page_options.index(_current_page) if _current_page in _page_options else 0,
         label_visibility="collapsed",
@@ -999,12 +1005,16 @@ st.markdown("""
         display: none !important;
     }
     .st-key-menu_switch_row label[data-testid="stRadioOption"] [data-testid="stMarkdownContainer"] p {
-        font-size: 12px !important;
+        white-space: pre-line !important;
+        font-size: 11px !important;
         text-align: center;
-        line-height: 1.25;
+        line-height: 1.3;
         margin: 0 !important;
         color: #9A8C7A;
         font-weight: 500;
+    }
+    .st-key-menu_switch_row label[data-testid="stRadioOption"] [data-testid="stMarkdownContainer"] p::first-line {
+        font-size: 22px;
     }
     .st-key-menu_switch_row label[data-testid="stRadioOption"][data-selected="true"] {
         background: #FFE4B5;
