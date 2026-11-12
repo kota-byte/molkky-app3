@@ -989,6 +989,10 @@ st.markdown("""
     }
     .st-key-menu_switch_row .stElementContainer {
         margin: 0 !important;
+        width: 100% !important;
+    }
+    .st-key-menu_switch_row div[data-testid="stRadio"] {
+        width: 100% !important;
     }
     .st-key-menu_switch_row div[data-testid="stRadioGroup"] {
         display: flex;
