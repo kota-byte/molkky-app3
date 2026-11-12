@@ -957,6 +957,7 @@ st.markdown("""
     .block-container {
         max-width: 100vw !important;
         overflow-x: hidden !important;
+        padding-top: 1rem !important;
         padding-bottom: 100px !important;
     }
     .st-key-menu_switch_row {
@@ -1312,7 +1313,6 @@ elif page == "🎯 投擲データ記録":
         .block-container {
             padding-left: 8px !important;
             padding-right: 8px !important;
-            padding-top: 5rem !important;
         }
         div.stButton > button {
             width: 100% !important;
