@@ -11,8 +11,7 @@ import streamlit.components.v1 as components
 import gspread
 from google.oauth2.service_account import Credentials
 
-_APP_ICON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "skittles.png")
-st.set_page_config(page_title="モルック戦術支援アプリ", page_icon=_APP_ICON_PATH, layout="centered")
+st.set_page_config(page_title="モルック戦術支援アプリ", layout="centered")
 
 db_conn = st.connection("sql", type="sql")
 
