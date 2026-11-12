@@ -1233,8 +1233,8 @@ def render_page_header(title_html):
         f'''
         <div style="display:flex; align-items:flex-start; gap:10px; margin-bottom:0.5rem;">
             <div style="flex:1; min-width:0; font-size:28px; font-weight:700; line-height:1.3;">{title_html}</div>
-            <span style="flex-shrink:0; font-size:13px; color:#9A8C7A; white-space:nowrap; padding-top:6px;">
-                👤 {st.session_state.current_player}
+            <span style="flex-shrink:0; font-size:16px; color:#9A8C7A; white-space:nowrap; padding-top:6px;">
+                👤：{st.session_state.current_player}
             </span>
         </div>
         ''',
