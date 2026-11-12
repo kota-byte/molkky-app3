@@ -27,6 +27,9 @@ _player_storage_component = components.declare_component("player_storage", path=
 _SKITTLE_STORAGE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend_components", "skittle_storage")
 _skittle_storage_component = components.declare_component("skittle_storage", path=_SKITTLE_STORAGE_DIR)
 
+_SCORE_STORAGE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend_components", "score_storage")
+_score_storage_component = components.declare_component("score_storage", path=_SCORE_STORAGE_DIR)
+
 _TARGET_SELECT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend_components", "target_select")
 _target_select_component = components.declare_component("target_select", path=_TARGET_SELECT_DIR)
 
@@ -695,6 +698,7 @@ if 'current_player' not in st.session_state:
     st.session_state.current_player = None
     st.session_state.player_restore_checked = False
     st.session_state.player_saved_to_storage = False
+    st.session_state.score_restore_checked = False
 
 # アプリ切り替え等でセッションが切れた場合、ブラウザのlocalStorageから
 # 前回ログインしていたプレイヤーを自動復元する（URLと違い他人とは共有されない）
@@ -854,6 +858,30 @@ if not st.session_state.player_saved_to_storage:
 if 'player_game_state' not in st.session_state:
     st.session_state.player_game_state = {}
 
+def _score_storage_key():
+    return f"molkky_score_{st.session_state.current_player}"
+
+def _mark_score_dirty():
+    st.session_state.score_dirty = True
+
+# アプリ切り替え等でセッションが切れた場合、得点はセッション内にしか
+# 保持していないため0に戻ってしまう。プレイヤー名の自動復元と同様に、
+# ブラウザのlocalStorageから前回の得点状態を一度だけ読み戻す
+if not st.session_state.score_restore_checked:
+    _restored_score = _score_storage_component(
+        action="load", storageKey=_score_storage_key(), key="score_restore",
+    )
+    if _restored_score is not None:
+        st.session_state.score_restore_checked = True
+        if isinstance(_restored_score, dict) and _restored_score:
+            st.session_state.player_game_state[st.session_state.current_player] = {
+                'my_score_game': _restored_score.get('my_score_game', 0),
+                'my_miss_game': _restored_score.get('my_miss_game', 0),
+                'my_total_score': _restored_score.get('my_total_score', 0),
+                'game_message': None,
+            }
+        st.rerun()
+
 def get_player_state():
     """ログイン中のプレイヤーごとに得点状態を分けて保持する"""
     p = st.session_state.current_player
@@ -870,6 +898,7 @@ def _reset_current_game():
     ps = get_player_state()
     ps['my_score_game'] = 0
     ps['my_miss_game'] = 0
+    _mark_score_dirty()
 
 # --- 実験データ収集用の状態 ---
 def _default_experiment_state():
@@ -1150,6 +1179,19 @@ if st.session_state.get('skittle_layout_dirty'):
         action="save", coords=coords_list, storageKey=_skittle_storage_key(), key="skittle_save")
     st.session_state.skittle_layout_dirty = False
 
+if st.session_state.get('score_dirty'):
+    _ps_for_save = get_player_state()
+    _score_storage_component(
+        action="save",
+        data={
+            "my_score_game": _ps_for_save['my_score_game'],
+            "my_miss_game": _ps_for_save['my_miss_game'],
+            "my_total_score": _ps_for_save['my_total_score'],
+        },
+        storageKey=_score_storage_key(), key="score_save",
+    )
+    st.session_state.score_dirty = False
+
 if "opponents" not in st.session_state:
     st.session_state.opponents = [{"score": 0, "miss": 0}]  # デフォルト1人
 
@@ -1369,6 +1411,7 @@ elif page == "🎯 投擲データ記録":
         if st.button("🔄 得点をリセット"):
             ps['my_score_game'] = 0
             ps['my_miss_game'] = 0
+            _mark_score_dirty()
             st.rerun()
 
     st.divider()
@@ -1591,6 +1634,7 @@ elif page == "🎯 投擲データ記録":
         for k in st.session_state.obstacles:
             st.session_state.obstacles[k] = False
         st.cache_data.clear()
+        _mark_score_dirty()
         st.toast("データを保存しました！", icon="✅")
         st.rerun()
 
@@ -2011,5 +2055,6 @@ st.divider()
 if st.button("ログアウト", use_container_width=True):
     st.session_state.current_player = None
     st.session_state.player_saved_to_storage = False
+    st.session_state.score_restore_checked = False
     _reset_experiment_session()
     st.rerun()
