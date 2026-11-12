@@ -1228,14 +1228,14 @@ def render_theme_css():
         """, unsafe_allow_html=True)
 
 def render_page_header(title_html):
-    """プレイヤー名を左、ページタイトルをその右に並べたヘッダーを描画する"""
+    """ページタイトルを左、プレイヤー名をその右に並べたヘッダーを描画する"""
     st.markdown(
         f'''
         <div style="display:flex; align-items:flex-start; gap:10px; margin-bottom:0.5rem;">
-            <span style="flex-shrink:0; font-size:13px; color:#9A8C7A; white-space:nowrap; padding-top:6px;">
-                👤 {st.session_state.current_player}
-            </span>
             <h1 style="flex:1; min-width:0; font-size:28px; line-height:1.3; margin:0;">{title_html}</h1>
+            <span style="flex-shrink:0; font-size:13px; color:#9A8C7A; white-space:nowrap; padding-top:6px;">
+                {st.session_state.current_player}
+            </span>
         </div>
         ''',
         unsafe_allow_html=True,
