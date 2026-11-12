@@ -927,20 +927,6 @@ st.caption(f"👤 プレイヤー: {st.session_state.current_player}")
 
 if "board_share_partner" not in st.session_state:
     st.session_state.board_share_partner = None
-with st.expander("🔗 盤面を共有する相手（任意）", expanded=False):
-    st.caption("相手も自分を選ぶと、ログインし直しても盤面が共有されます（例：被験者同士の対戦）")
-    _other_players = [
-        p for p in db_conn.query("SELECT name FROM players ORDER BY name", ttl=0)['name'].tolist()
-        if p != st.session_state.current_player
-    ]
-    _share_options = ["（共有しない）"] + _other_players
-    _current_partner = st.session_state.board_share_partner
-    _share_index = _share_options.index(_current_partner) if _current_partner in _share_options else 0
-    _selected_partner = st.selectbox(
-        "盤面を共有する相手", _share_options, index=_share_index,
-        label_visibility="collapsed", key="board_share_partner_select",
-    )
-    st.session_state.board_share_partner = None if _selected_partner == "（共有しない）" else _selected_partner
 
 with st.container(key="menu_switch_row"):
     _page_options = ["🎯 投擲データ記録", "🤖 AI戦術提示シミュレーター", "📋 評価実験"]
@@ -1936,6 +1922,21 @@ elif page == "🤖 AI戦術提示シミュレーター":
 else:
     render_theme_css()
     st.title("📋 評価実験")
+
+    with st.expander("🔗 盤面を共有する相手（任意）", expanded=False):
+        st.caption("相手も自分を選ぶと、ログインし直しても盤面が共有されます（例：被験者同士の対戦）")
+        _other_players = [
+            p for p in db_conn.query("SELECT name FROM players ORDER BY name", ttl=0)['name'].tolist()
+            if p != st.session_state.current_player
+        ]
+        _share_options = ["（共有しない）"] + _other_players
+        _current_partner = st.session_state.board_share_partner
+        _share_index = _share_options.index(_current_partner) if _current_partner in _share_options else 0
+        _selected_partner = st.selectbox(
+            "盤面を共有する相手", _share_options, index=_share_index,
+            label_visibility="collapsed", key="board_share_partner_select",
+        )
+        st.session_state.board_share_partner = None if _selected_partner == "（共有しない）" else _selected_partner
 
     exp = st.session_state.experiment
 
