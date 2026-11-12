@@ -324,10 +324,14 @@ def _gasha_prob_for_candidate_count(n):
     else:
         return _GASHA_PROB_HIGH
 
-# 投げた棒が奥方向へ流れる力を持ったまま進むため、狙った的より奥にある
-# 候補の方が巻き込まれやすい、という物理的な直感に基づく仮の係数
-# （実データでの裏付けは無い）
-_COLLATERAL_DIRECTION_FACTOR = 0.5
+# throw_logsの「得点あり失敗」かつ密着フラグが1方向だけ立っている行
+# （＝倒れたのがほぼ確実にその方向と推定できるケース）を母数込みで集計した
+# 結果、前後（奥28.6%・手前25.0%）はほぼ差が無かった一方、左右で明確な差
+# （左40.7%・右16.7%、比は約2.44倍）が出たため、奥優遇ではなく左右優遇の
+# 係数に変更。値は「真左/真右の重み比が2.44倍になる」よう(1+f)/(1-f)=2.44
+# から逆算（f≈0.42）。個人ごとの推定は「どれが倒れたか」自体が間接推定で
+# 1人あたりのサンプルが少なすぎるため行わず、全員共通の値として使う
+_COLLATERAL_DIRECTION_FACTOR = 0.42
 
 # 実際に記録されたガシャの倒れた本数の内訳（2026-10-20以降、テストデータ除く）
 _GASHA_COUNT_WEIGHTS = {2: 8, 3: 2, 4: 2}
@@ -363,12 +367,11 @@ def resolve_partial_hit(target_num, coords_dict, move_fn):
         dist = math.sqrt(dx**2 + dy**2)
         if dist <= 1.0:
             candidates.append(n)
-            # 近いほど重みが大きい。投げた棒は奥方向へ進む力を持ったまま
-            # 流れていくため、狙った的より奥にある候補ほど巻き込まれ
-            # やすく、手前にある候補ほど巻き込まれにくいという物理的な
-            # 直感を、角度成分(dy/dist、奥向きで+1・手前向きで-1)による
-            # 補正として加える（実データでの裏付けは無い仮の係数）
-            direction_mult = 1.0 + _COLLATERAL_DIRECTION_FACTOR * (dy / dist if dist > 0 else 0)
+            # 近いほど重みが大きい。実データ上、狙った的より左側にある
+            # 候補の方が右側にある候補より巻き込まれやすい傾向があった
+            # ため、角度成分(dx/dist、右向きで+1・左向きで-1)による補正を
+            # 加える（前後方向は実データ上ほぼ差が無かったため中立のまま）
+            direction_mult = 1.0 - _COLLATERAL_DIRECTION_FACTOR * (dx / dist if dist > 0 else 0)
             weights.append((1.0 / (dist + 0.1)) * direction_mult)
 
     if not candidates:
