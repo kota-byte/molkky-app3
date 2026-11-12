@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import base64
 import streamlit as st
 import pandas as pd
 from datetime import datetime
@@ -28,6 +29,14 @@ _skittle_storage_component = components.declare_component("skittle_storage", pat
 
 _TARGET_SELECT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend_components", "target_select")
 _target_select_component = components.declare_component("target_select", path=_TARGET_SELECT_DIR)
+
+_NAV_ICON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "nav_icons")
+
+@st.cache_data
+def _nav_icon_data_uri(filename):
+    with open(os.path.join(_NAV_ICON_DIR, filename), "rb") as f:
+        encoded = base64.b64encode(f.read()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
 
 # --- 1. データベース準備 ---
 @st.cache_resource
@@ -935,16 +944,10 @@ with st.expander("🔗 盤面を共有する相手（任意）", expanded=False)
 
 with st.container(key="menu_switch_row"):
     _page_options = ["🎯 投擲データ記録", "🤖 AI戦術提示シミュレーター", "📋 評価実験"]
-    _page_nav_labels = {
-        "🎯 投擲データ記録": "🎯\n記録",
-        "🤖 AI戦術提示シミュレーター": "🤖\nシミュ",
-        "📋 評価実験": "📋\n実験",
-    }
     _current_page = st.session_state.get('_page', _page_options[0])
     page = st.radio(
         "メニューを切り替え",
         _page_options,
-        format_func=lambda opt: _page_nav_labels[opt],
         horizontal=True,
         index=_page_options.index(_current_page) if _current_page in _page_options else 0,
         label_visibility="collapsed",
@@ -969,7 +972,7 @@ st.markdown("""
     .block-container {
         max-width: 100vw !important;
         overflow-x: hidden !important;
-        padding-bottom: 88px !important;
+        padding-bottom: 100px !important;
     }
     .st-key-menu_switch_row {
         position: fixed !important;
@@ -1005,27 +1008,35 @@ st.markdown("""
         display: none !important;
     }
     .st-key-menu_switch_row label[data-testid="stRadioOption"] [data-testid="stMarkdownContainer"] p {
-        white-space: pre-line !important;
-        font-size: 11px !important;
-        text-align: center;
-        line-height: 1.3;
+        font-size: 0 !important;
+        line-height: 0 !important;
         margin: 0 !important;
-        color: #9A8C7A;
-        font-weight: 500;
-    }
-    .st-key-menu_switch_row label[data-testid="stRadioOption"] [data-testid="stMarkdownContainer"] p::first-line {
-        font-size: 22px;
+        width: 54px;
+        height: 54px;
+        background-repeat: no-repeat;
+        background-position: center;
+        background-size: contain;
     }
     .st-key-menu_switch_row label[data-testid="stRadioOption"][data-selected="true"] {
         background: #FFE4B5;
     }
-    .st-key-menu_switch_row label[data-testid="stRadioOption"][data-selected="true"] [data-testid="stMarkdownContainer"] p {
-        color: #FF6B35 !important;
-        font-weight: 700;
-    }
     div[data-testid="stMarkdownContainer"] hr {
         margin: 12px 0 !important;
     }
+    </style>
+    """, unsafe_allow_html=True)
+
+st.markdown(f"""
+    <style>
+    .st-key-menu_switch_row label[data-testid="stRadioOption"]:nth-child(1) [data-testid="stMarkdownContainer"] p {{
+        background-image: url({_nav_icon_data_uri("record.png")});
+    }}
+    .st-key-menu_switch_row label[data-testid="stRadioOption"]:nth-child(2) [data-testid="stMarkdownContainer"] p {{
+        background-image: url({_nav_icon_data_uri("simulator.png")});
+    }}
+    .st-key-menu_switch_row label[data-testid="stRadioOption"]:nth-child(3) [data-testid="stMarkdownContainer"] p {{
+        background-image: url({_nav_icon_data_uri("experiment.png")});
+    }}
     </style>
     """, unsafe_allow_html=True)
 
