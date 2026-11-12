@@ -12,6 +12,17 @@ from google.oauth2.service_account import Credentials
 
 st.set_page_config(page_title="モルック戦術支援アプリ", layout="centered")
 
+# Streamlit Community Cloudが右下に重ねてくる「Hosted with Streamlit」バッジと
+# 作者アバターを非表示にする（下部固定ナビと重なって見づらいため）
+st.markdown("""
+    <style>
+    a[href="https://streamlit.io/cloud"],
+    a[href^="https://share.streamlit.io/user/"] {
+        display: none !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 db_conn = st.connection("sql", type="sql")
 
 _SWIPE_HISTORY_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend_components", "swipe_history")
