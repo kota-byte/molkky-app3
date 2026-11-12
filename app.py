@@ -916,6 +916,23 @@ if st.query_params.get("page") == "sim":
 
 st.caption(f"👤 プレイヤー: {st.session_state.current_player}")
 
+if "board_share_partner" not in st.session_state:
+    st.session_state.board_share_partner = None
+with st.expander("🔗 盤面を共有する相手（任意）", expanded=False):
+    st.caption("相手も自分を選ぶと、ログインし直しても盤面が共有されます（例：被験者同士の対戦）")
+    _other_players = [
+        p for p in db_conn.query("SELECT name FROM players ORDER BY name", ttl=0)['name'].tolist()
+        if p != st.session_state.current_player
+    ]
+    _share_options = ["（共有しない）"] + _other_players
+    _current_partner = st.session_state.board_share_partner
+    _share_index = _share_options.index(_current_partner) if _current_partner in _share_options else 0
+    _selected_partner = st.selectbox(
+        "盤面を共有する相手", _share_options, index=_share_index,
+        label_visibility="collapsed", key="board_share_partner_select",
+    )
+    st.session_state.board_share_partner = None if _selected_partner == "（共有しない）" else _selected_partner
+
 with st.container(key="menu_switch_row"):
     _page_options = ["🎯 投擲データ記録", "🤖 AI戦術提示シミュレーター", "📋 評価実験"]
     _current_page = st.session_state.get('_page', _page_options[0])
@@ -1012,20 +1029,30 @@ if 'fullscreen' not in st.session_state:
 if 'palette_open' not in st.session_state:
     st.session_state.palette_open = True
 
+def _skittle_identity():
+    """盤面の保存キーの元になる「実質的な持ち主」。共有相手を選んでいれば
+    2人の名前をソートして組み合わせたペア識別子（相手も同じ人を選べば
+    同じ識別子になり、盤面を共有できる）、選んでいなければ自分の名前単体"""
+    partner = st.session_state.get('board_share_partner')
+    if partner:
+        return "pair:" + "_".join(sorted([st.session_state.current_player, partner]))
+    return "solo:" + st.session_state.current_player
+
 def _skittle_storage_key():
-    return f"molkky_skittle_layout_{st.session_state.current_player}"
+    return f"molkky_skittle_layout_{_skittle_identity()}"
 
 if "skittle_m_coords" not in st.session_state:
     st.session_state.skittle_m_coords = {num: None for num in range(1, 13)}
     st.session_state.skittle_layout_restore_checked = False
-    st.session_state.skittle_layout_player = st.session_state.current_player
+    st.session_state.skittle_layout_identity = _skittle_identity()
 
-if st.session_state.get('skittle_layout_player') != st.session_state.current_player:
-    # プレイヤーが切り替わったら、前の人の配置をメモリ上にも残さない
+if st.session_state.get('skittle_layout_identity') != _skittle_identity():
+    # 盤面の実質的な持ち主（共有相手込み）が変わったら、前の盤面を
+    # メモリ上にも残さない（共有相手が同じままなら変わらないので維持される）
     st.session_state.skittle_m_coords = {num: None for num in range(1, 13)}
     st.session_state.skittle_layout_restore_checked = False
-    st.session_state.skittle_layout_player = st.session_state.current_player
-    # 距離・障害物配置の自動入力も、前の人のマップを基準にした値を引き継がせない
+    st.session_state.skittle_layout_identity = _skittle_identity()
+    # 距離・障害物配置の自動入力も、前の盤面を基準にした値を引き継がせない
     st.session_state.last_target_no_for_autofill = None
 
 if not st.session_state.get('skittle_layout_restore_checked', True):
