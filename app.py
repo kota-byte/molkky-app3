@@ -1302,6 +1302,7 @@ if st.session_state.fullscreen:
 # ==========================================
 elif page == "🎯 投擲データ記録":
     render_theme_css()
+    render_page_header("🎯 投擲データ入力")
     st.markdown("""
         <style>
         {
@@ -1345,8 +1346,6 @@ elif page == "🎯 投擲データ記録":
         }
         </style>
         """, unsafe_allow_html=True)
-
-    render_page_header("🎯 投擲データ入力")
 
     ps = get_player_state()
 
