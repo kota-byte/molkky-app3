@@ -923,8 +923,6 @@ def _log_match_end(result):
 if st.query_params.get("page") == "sim":
     st.session_state['_page'] = "🤖 AI戦術提示シミュレーター"
 
-st.caption(f"👤 プレイヤー: {st.session_state.current_player}")
-
 if "board_share_partner" not in st.session_state:
     st.session_state.board_share_partner = None
 
@@ -1229,6 +1227,20 @@ def render_theme_css():
         </style>
         """, unsafe_allow_html=True)
 
+def render_page_header(title_html):
+    """プレイヤー名を左、ページタイトルをその右に並べたヘッダーを描画する"""
+    st.markdown(
+        f'''
+        <div style="display:flex; align-items:flex-start; gap:10px; margin-bottom:0.5rem;">
+            <span style="flex-shrink:0; font-size:13px; color:#9A8C7A; white-space:nowrap; padding-top:6px;">
+                👤 {st.session_state.current_player}
+            </span>
+            <h1 style="flex:1; min-width:0; font-size:28px; line-height:1.3; margin:0;">{title_html}</h1>
+        </div>
+        ''',
+        unsafe_allow_html=True,
+    )
+
 # ==========================================
 # 全画面モード：declare_component で postMessage 経由のやりとり
 # スライドアウトパレット（右エッジ）＋ ドラッグ&ドロップ
@@ -1336,7 +1348,7 @@ elif page == "🎯 投擲データ記録":
         </style>
         """, unsafe_allow_html=True)
 
-    st.title("🎯 投擲データ入力")
+    render_page_header("🎯 投擲データ入力")
 
     ps = get_player_state()
 
@@ -1667,10 +1679,7 @@ elif page == "🎯 投擲データ記録":
 # ==========================================
 elif page == "🤖 AI戦術提示シミュレーター":
         render_theme_css()
-        st.markdown(
-            '<h1 style="font-size:28px; line-height:1.3;">🤖 AI戦術提示<br>シミュレーター</h1>',
-            unsafe_allow_html=True,
-        )
+        render_page_header("🤖 AI戦術提示<br>シミュレーター")
         # 自分のスコア入力（投擲データ記録画面の得点・連続ミス回数を引き継ぐ）
         ps = get_player_state()
         st.write("**自分**")
@@ -1921,7 +1930,7 @@ elif page == "🤖 AI戦術提示シミュレーター":
 # ==========================================
 else:
     render_theme_css()
-    st.title("📋 評価実験")
+    render_page_header("📋 評価実験")
 
     with st.expander("🔗 盤面を共有する相手（任意）", expanded=False):
         st.caption("相手も自分を選ぶと、ログインし直しても盤面が共有されます（例：被験者同士の対戦）")
