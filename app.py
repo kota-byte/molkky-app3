@@ -940,7 +940,8 @@ with st.container(key="menu_switch_row"):
         "メニューを切り替え",
         _page_options,
         horizontal=True,
-        index=_page_options.index(_current_page) if _current_page in _page_options else 0
+        index=_page_options.index(_current_page) if _current_page in _page_options else 0,
+        label_visibility="collapsed",
     )
 st.session_state['_page'] = page
 
@@ -962,9 +963,55 @@ st.markdown("""
     .block-container {
         max-width: 100vw !important;
         overflow-x: hidden !important;
+        padding-bottom: 88px !important;
     }
     .st-key-menu_switch_row {
-        margin-bottom: -1rem !important;
+        position: fixed !important;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        width: 100%;
+        z-index: 9999;
+        margin: 0 !important;
+        background: #FFFFFF;
+        border-top: 1px solid #FFD8A8;
+        box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.08);
+        padding: 4px 4px calc(4px + env(safe-area-inset-bottom)) 4px !important;
+    }
+    .st-key-menu_switch_row .stElementContainer {
+        margin: 0 !important;
+    }
+    .st-key-menu_switch_row div[data-testid="stRadioGroup"] {
+        display: flex;
+        width: 100%;
+        gap: 0;
+    }
+    .st-key-menu_switch_row label[data-testid="stRadioOption"] {
+        flex: 1 1 0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin: 0 !important;
+        padding: 8px 2px !important;
+        border-radius: 10px;
+    }
+    .st-key-menu_switch_row label[data-testid="stRadioOption"] > div > div > div:not([data-testid="stMarkdownContainer"]) {
+        display: none !important;
+    }
+    .st-key-menu_switch_row label[data-testid="stRadioOption"] [data-testid="stMarkdownContainer"] p {
+        font-size: 12px !important;
+        text-align: center;
+        line-height: 1.25;
+        margin: 0 !important;
+        color: #9A8C7A;
+        font-weight: 500;
+    }
+    .st-key-menu_switch_row label[data-testid="stRadioOption"][data-selected="true"] {
+        background: #FFE4B5;
+    }
+    .st-key-menu_switch_row label[data-testid="stRadioOption"][data-selected="true"] [data-testid="stMarkdownContainer"] p {
+        color: #FF6B35 !important;
+        font-weight: 700;
     }
     div[data-testid="stMarkdownContainer"] hr {
         margin: 12px 0 !important;
