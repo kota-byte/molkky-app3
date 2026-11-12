@@ -1035,8 +1035,6 @@ st.markdown(f"""
     </style>
     """, unsafe_allow_html=True)
 
-st.divider()
-
 @st.cache_data(ttl=60)
 def load_data(player):
     return db_conn.query(
