@@ -951,6 +951,7 @@ with st.container(key="menu_switch_row"):
         horizontal=True,
         index=_page_options.index(_current_page) if _current_page in _page_options else 0,
         label_visibility="collapsed",
+        key="nav_radio",
     )
 st.session_state['_page'] = page
 
@@ -986,6 +987,11 @@ st.markdown("""
         border-top: 1px solid #FFD8A8;
         box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.08);
         padding: 4px 4px calc(4px + env(safe-area-inset-bottom)) 4px !important;
+        touch-action: manipulation;
+    }
+    .st-key-menu_switch_row * {
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
     }
     .st-key-menu_switch_row .stElementContainer {
         margin: 0 !important;
