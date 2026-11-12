@@ -1259,6 +1259,7 @@ if st.session_state.fullscreen:
     section[data-testid="stSidebar"],
     div[data-testid="stToolbar"],
     footer, #MainMenu { display:none !important; }
+    .st-key-menu_switch_row { display:none !important; }
     .main .block-container { padding:0 !important; max-width:100% !important; }
     iframe:first-of-type {
         position:fixed !important; inset:0 !important;
