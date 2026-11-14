@@ -434,7 +434,7 @@ def _obstacle_near_mask(df, obstacle_flags):
             mask &= (df[d] == 0)
     return mask
 
-def get_success_rate(dist, obstacle_flags, df, close_count=0, near_count=0):
+def get_success_rate(dist, obstacle_flags, df, close_count=0, near_count=0, personalize=True):
     """ベース値（距離別）に過去データの実測値を重み付けして混ぜる。
     一致するデータが見つかるまで、以下の順でマッチング条件を緩める：
     1. 距離完全一致 ＋ 障害物パターン完全一致
@@ -449,10 +449,17 @@ def get_success_rate(dist, obstacle_flags, df, close_count=0, near_count=0):
     あれば、その分だけ実データ側に寄せる（近接本数はDB未記録のため常に
     初期値のまま）。どの段階でも、実データの件数が多いほどベース値側の
     影響は薄まる＝このプレイヤーのデータが貯まるほど、密集度ペナルティは
-    データに基づいた値へと自然に置き換わっていく"""
+    データに基づいた値へと自然に置き換わっていく。
+    personalize=Falseの場合、過去データとのブレンドを一切せず、距離と
+    密集度だけで決まる素の値を返す（対戦相手の強さがログイン中の
+    プレイヤー自身の癖に引きずられないようにするため、シミュレーション
+    内で相手の番を評価する時に使う）"""
     close_penalty = _CLOSE_PENALTY_BY_COUNT.get(close_count, _CLOSE_PENALTY_CAP)
     near_penalty = _CLOSE_PENALTY_BY_COUNT.get(near_count, _CLOSE_PENALTY_CAP) * _NEAR_PENALTY_FACTOR
     base = max(0.05, BASE_RATE.get(round(dist * 2) / 2, 0.5) - close_penalty - near_penalty)
+
+    if not personalize:
+        return base
 
     same_close_count = df[DIRS].sum(axis=1) == close_count
     matched_cc = df[same_close_count]
@@ -503,16 +510,17 @@ def run_simulation(
     # （move_skittleで駒が動いたら必ずクリアする）
     geom_cache = {}
 
-    def get_rate_for(num, coords_dict):
-        """現在の配置に基づいてnum番の成功率を計算（キャッシュ付き）"""
+    def get_rate_for(num, coords_dict, personalize=True):
+        """現在の配置に基づいてnum番の成功率を計算（キャッシュ付き）。
+        personalize=Falseなら過去データとブレンドせず素の値を返す"""
         if num not in geom_cache:
             geom_cache[num] = get_obstacle_info(num, coords_dict)
         obs, close_count, near_count = geom_cache[num]
         d = round(coords_dict[num][1] / 0.5) * 0.5
         d = max(3.0, min(10.0, d))
-        key = (d, tuple(sorted(obs.items())), close_count, near_count)
+        key = (d, tuple(sorted(obs.items())), close_count, near_count, personalize)
         if key not in rate_memo:
-            rate_memo[key] = get_success_rate(d, obs, df, close_count, near_count)
+            rate_memo[key] = get_success_rate(d, obs, df, close_count, near_count, personalize=personalize)
         return rate_memo[key]
 
     def move_skittle(coords_dict, num):
@@ -526,7 +534,7 @@ def run_simulation(
         coords_dict[num] = (new_x, new_y)
         geom_cache.clear()
 
-    def _greedy_value(score, active_now, coords_dict, shortlist_size=4):
+    def _greedy_value(score, active_now, coords_dict, shortlist_size=4, personalize=True):
         """先読み無しの単純な評価値（近さ×成功率の最大値）。1手先読みの
         「次の局面がどれくらい良さそうか」を安く見積もるための補助関数"""
         if not active_now:
@@ -536,12 +544,12 @@ def run_simulation(
         shortlist = sorted(active_now, key=closeness_of)[:shortlist_size]
         best = -1.0
         for n in shortlist:
-            c = get_rate_for(n, coords_dict) / (1 + closeness_of(n))
+            c = get_rate_for(n, coords_dict, personalize) / (1 + closeness_of(n))
             if c > best:
                 best = c
         return best
 
-    def pick_target(score, active_now, coords_dict, shortlist_size=4):
+    def pick_target(score, active_now, coords_dict, shortlist_size=4, personalize=True):
         """1手先読みで番号を選ぶ。候補ごとに「成功した場合」「外した場合」
         それぞれの次局面のだいたいの良さ（_greedy_value、先読み無し）を
         見積もり、成功率で重み付けした期待値が一番高い候補を選ぶ。
@@ -549,19 +557,21 @@ def run_simulation(
         バーストしやすい手を選んでしまうことがあったため。
         成功率の計算は重いので、まず近さだけで候補をshortlist_size件に
         絞ってから、その中だけ先読み込みで比較する（高速化）。
+        personalize=Falseなら、対戦相手の手番として、過去データとの
+        ブレンドをせず距離・密集度だけで決まる素の成功率で評価する。
         戻り値は (選んだ番号, その成功率)"""
         def closeness_of(n):
             return abs(score + n - 50) if score + n <= 50 else abs(score + n - 25 - 50)
         shortlist = sorted(active_now, key=closeness_of)[:shortlist_size]
         # 外した場合の評価値はどの候補を選んでも同じ（スコア・盤面が
         # 変わらないため）なので、候補ループの外で1回だけ計算する
-        value_miss = _greedy_value(score, active_now, coords_dict, shortlist_size)
+        value_miss = _greedy_value(score, active_now, coords_dict, shortlist_size, personalize)
 
         best_n = None
         best_ev = -1.0
         best_rate = 0.0
         for n in shortlist:
-            rate = get_rate_for(n, coords_dict)
+            rate = get_rate_for(n, coords_dict, personalize)
             new_score = score + n
             if new_score == 50:
                 value_success = 10.0  # 即勝ちは最優先
@@ -569,7 +579,7 @@ def run_simulation(
                 if new_score > 50:
                     new_score = 25
                 remaining_active = [m for m in active_now if m != n]
-                value_success = _greedy_value(new_score, remaining_active, coords_dict, shortlist_size)
+                value_success = _greedy_value(new_score, remaining_active, coords_dict, shortlist_size, personalize)
             ev = rate * value_success + (1 - rate) * value_miss
             if ev > best_ev:
                 best_ev = ev
@@ -657,10 +667,13 @@ def run_simulation(
                             break
                 else:
                     # 相手のターン（turn_idx-1番目の相手）。狙う番号の決め方・
-                    # 成功率の計算方法は自分と同じロジックを使う（相手だけ
-                    # 無戦略・障害物無視という不自然な有利/不利が出ないように）
+                    # 距離/密集度による難易度は自分と同じロジックを使う（相手
+                    # だけ無戦略・障害物無視という不自然な有利/不利が出ない
+                    # ように）。ただし成功率は過去データとブレンドしない
+                    # （対戦相手の強さがログイン中プレイヤー自身の癖に
+                    # 引きずられて人によって変わってしまうのはおかしいため）
                     opp = opp_states[turn_idx - 1]
-                    opp_target, opp_rate = pick_target(opp["score"], active_now, sim_coords)
+                    opp_target, opp_rate = pick_target(opp["score"], active_now, sim_coords, personalize=False)
 
                     r3 = random.random()
                     if r3 < opp_rate:
