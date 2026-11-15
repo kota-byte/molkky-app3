@@ -308,6 +308,19 @@ def get_fall_offset():
     dy = distance * math.cos(angle_rad)
     return dx, dy
 
+# 「成功（狙った番号だけが倒れる）」以外に何か起きる（得点あり失敗+ガシャ）
+# 確率。周囲の障害物方位数（flag_count）ごとのthrow_logs実データ（813件）
+# から算出：0本=15.3%(633件)、1本=32.8%(119件)、2本=54.5%(44件)。
+# 0本・1本は件数が十分なので実測値を採用。2本は44件とやや少ないが参考に
+# 採用。3本以上は17件しかなくノイズが大きいため、2本の実測値を上限として
+# そのまま使う（これ以上の障害物密度でさらに悪化するかは今のデータでは
+# 判断できないため）
+_OTHER_RATE_BY_FLAG_COUNT = {0: 0.153, 1: 0.328}
+_OTHER_RATE_CAP = 0.545
+
+def _other_rate_for(flag_count):
+    return _OTHER_RATE_BY_FLAG_COUNT.get(flag_count, _OTHER_RATE_CAP)
+
 # 「得点あり失敗」のうち、別の1本だけに当たるか、複数本まとめて倒れる
 # 「ガシャ」（本数が得点）になるかの比率。ガシャ記録機能を追加した
 # 2026-10-20以降の実データ（is_success=2または3）から算出すると全体では
@@ -351,7 +364,7 @@ def _weighted_sample_without_replacement(candidates, weights, k):
     return chosen
 
 def resolve_partial_hit(target_num, coords_dict, move_fn):
-    """「得点あり失敗」の分岐（15%）の中身を解決する。別の1本だけに
+    """「得点あり失敗」の分岐（_other_rate_forで決まる確率）の中身を解決する。別の1本だけに
     当たるか、複数本まとめて倒れる「ガシャ」（倒した本数が得点）になる
     かは、1.0m以内の候補数が多いほど起きやすいという実データの傾向に
     合わせて段階的に確率を変える。倒れたスキットルはmove_fnで移動させる。
@@ -607,6 +620,7 @@ def run_simulation(
 
             # 自分の1投目
             my_rate = get_rate_for(target_num, sim_coords)
+            my_other_rate = _other_rate_for(sum(geom_cache[target_num][0].values()))
             result = random.random()
             if result < my_rate:
                 ms += target_num
@@ -617,7 +631,7 @@ def run_simulation(
                     continue
                 elif ms > 50:
                     ms = 25
-            elif result < my_rate + 0.15:
+            elif result < my_rate + my_other_rate:
                 mm = 0
                 delta = resolve_partial_hit(target_num, sim_coords, move_skittle)
                 if delta > 0:
@@ -645,6 +659,7 @@ def run_simulation(
                 if turn_idx == 0:
                     # 自分のターン
                     best, rate2 = pick_target(ms, active_now, sim_coords)
+                    other_rate2 = _other_rate_for(sum(geom_cache[best][0].values()))
 
                     r2 = random.random()
                     if r2 < rate2:
@@ -656,7 +671,7 @@ def run_simulation(
                             break
                         elif ms > 50:
                             ms = 25
-                    elif r2 < rate2 + 0.15:
+                    elif r2 < rate2 + other_rate2:
                         mm = 0
                         delta2 = resolve_partial_hit(best, sim_coords, move_skittle)
                         if delta2 > 0:
@@ -679,6 +694,7 @@ def run_simulation(
                     # 引きずられて人によって変わってしまうのはおかしいため）
                     opp = opp_states[turn_idx - 1]
                     opp_target, opp_rate = pick_target(opp["score"], active_now, sim_coords, personalize=False)
+                    other_rate3 = _other_rate_for(sum(geom_cache[opp_target][0].values()))
 
                     r3 = random.random()
                     if r3 < opp_rate:
@@ -689,7 +705,7 @@ def run_simulation(
                             break
                         elif opp["score"] > 50:
                             opp["score"] = 25
-                    elif r3 < opp_rate + 0.15:
+                    elif r3 < opp_rate + other_rate3:
                         opp["miss"] = 0
                         delta3 = resolve_partial_hit(opp_target, sim_coords, move_skittle)
                         if delta3 > 0:
