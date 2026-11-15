@@ -251,10 +251,24 @@ def get_obstacle_proximity_counts(target_num, skittle_coords, close=0.2, near=0.
 
     return close_count, near_count
 
+def _angle_to_dir(angle):
+    if   -22.5 <= angle <  22.5: return 'n'
+    elif  22.5 <= angle <  67.5: return 'ne'
+    elif  67.5 <= angle < 112.5: return 'e'
+    elif 112.5 <= angle < 157.5: return 'se'
+    elif angle >= 157.5 or angle < -157.5: return 's'
+    elif -157.5 <= angle < -112.5: return 'sw'
+    elif -112.5 <= angle <  -67.5: return 'w'
+    elif  -67.5 <= angle <  -22.5: return 'nw'
+
 def get_obstacle_info(target_num, skittle_coords, threshold=0.225, skittle_diameter=0.059,
                        close=0.2, near=0.4):
     """get_obstacle_flags()とget_obstacle_proximity_counts()を1回の走査で
     まとめて計算する版（シミュレーションのホットパス用）。
+    close_count/near_countは「本数」ではなく「その範囲に障害物がある方位の
+    数」（同じ方角に複数本重なっていても1として数える。塞がれているかは
+    方角の種類で決まるため。throw_logs側のclose_count＝8方位フラグの合計も
+    方位の種類数なので、意味を揃えている）
     戻り値は (flags辞書, close_count, near_count)"""
     if skittle_coords[target_num] is None:
         return {}, 0, 0
@@ -263,8 +277,8 @@ def get_obstacle_info(target_num, skittle_coords, threshold=0.225, skittle_diame
     dirs = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw']
     flags = {d: 0 for d in dirs}
     center_threshold = threshold + skittle_diameter
-    close_count = 0
-    near_count = 0
+    close_dirs = set()
+    near_dirs = set()
 
     co_located_nums = []
     for num, coord in skittle_coords.items():
@@ -274,28 +288,25 @@ def get_obstacle_info(target_num, skittle_coords, threshold=0.225, skittle_diame
         dy = coord[1] - ty
         dist = math.sqrt(dx**2 + dy**2)
 
+        if dist < 1e-6:
+            co_located_nums.append(num)
+            continue
+
+        direction = _angle_to_dir(math.degrees(math.atan2(dx, dy)))
+
         if dist <= close + 1e-6:
-            close_count += 1
+            close_dirs.add(direction)
         elif dist <= near + 1e-6:
-            near_count += 1
+            near_dirs.add(direction)
 
         if dist <= center_threshold:
-            if dist < 1e-6:
-                co_located_nums.append(num)
-                continue
-            angle = math.degrees(math.atan2(dx, dy))
-            if   -22.5 <= angle <  22.5: flags['n']  = 1
-            elif  22.5 <= angle <  67.5: flags['ne'] = 1
-            elif  67.5 <= angle < 112.5: flags['e']  = 1
-            elif 112.5 <= angle < 157.5: flags['se'] = 1
-            elif angle >= 157.5 or angle < -157.5: flags['s'] = 1
-            elif -157.5 <= angle < -112.5: flags['sw'] = 1
-            elif -112.5 <= angle <  -67.5: flags['w']  = 1
-            elif  -67.5 <= angle <  -22.5: flags['nw'] = 1
+            flags[direction] = 1
 
     if co_located_nums:
         _assign_colocated_dirs(target_num, co_located_nums, flags, dirs)
 
+    close_count = len(close_dirs) + len(co_located_nums)
+    near_count = len(near_dirs - close_dirs)
     return flags, close_count, near_count
 
 def get_fall_offset():
