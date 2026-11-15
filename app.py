@@ -578,7 +578,7 @@ def run_simulation(
                 best = c
         return best
 
-    def pick_target(score, active_now, coords_dict, shortlist_size=4, personalize=True):
+    def pick_target(score, active_now, coords_dict, shortlist_size=4, personalize=True, miss_count=0):
         """1手先読みで番号を選ぶ。候補ごとに「成功した場合」「外した場合」
         それぞれの次局面のだいたいの良さ（_greedy_value、先読み無し）を
         見積もり、成功率で重み付けした期待値が一番高い候補を選ぶ。
@@ -588,13 +588,19 @@ def run_simulation(
         絞ってから、その中だけ先読み込みで比較する（高速化）。
         personalize=Falseなら、対戦相手の手番として、過去データとの
         ブレンドをせず距離・密集度だけで決まる素の成功率で評価する。
+        miss_countは現在の連続ミス数。2（＝今外したら3連続ミスで即失格）
+        の時は、外した場合の価値を「ゲームが続く前提」の_greedy_valueでは
+        なく確実な負け(0)として評価する（それ以外の時は従来通り）。
         戻り値は (選んだ番号, その成功率)"""
         def closeness_of(n):
             return abs(score + n - 50) if score + n <= 50 else abs(score + n - 25 - 50)
         shortlist = sorted(active_now, key=closeness_of)[:shortlist_size]
         # 外した場合の評価値はどの候補を選んでも同じ（スコア・盤面が
         # 変わらないため）なので、候補ループの外で1回だけ計算する
-        value_miss = _greedy_value(score, active_now, coords_dict, shortlist_size, personalize)
+        if miss_count >= 2:
+            value_miss = 0.0
+        else:
+            value_miss = _greedy_value(score, active_now, coords_dict, shortlist_size, personalize)
 
         best_n = None
         best_ev = -1.0
@@ -669,7 +675,7 @@ def run_simulation(
 
                 if turn_idx == 0:
                     # 自分のターン
-                    best, rate2 = pick_target(ms, active_now, sim_coords)
+                    best, rate2 = pick_target(ms, active_now, sim_coords, miss_count=mm)
                     other_rate2 = _other_rate_for(sum(geom_cache[best][0].values()))
 
                     r2 = random.random()
@@ -704,7 +710,7 @@ def run_simulation(
                     # （対戦相手の強さがログイン中プレイヤー自身の癖に
                     # 引きずられて人によって変わってしまうのはおかしいため）
                     opp = opp_states[turn_idx - 1]
-                    opp_target, opp_rate = pick_target(opp["score"], active_now, sim_coords, personalize=False)
+                    opp_target, opp_rate = pick_target(opp["score"], active_now, sim_coords, personalize=False, miss_count=opp["miss"])
                     other_rate3 = _other_rate_for(sum(geom_cache[opp_target][0].values()))
 
                     r3 = random.random()
