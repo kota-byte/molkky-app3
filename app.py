@@ -563,19 +563,52 @@ def run_simulation(
         coords_dict[num] = (new_x, new_y)
         geom_cache.clear()
 
-    def _greedy_value(score, active_now, coords_dict, shortlist_size=4, personalize=True):
-        """先読み無しの単純な評価値（近さ×成功率の最大値）。1手先読みの
-        「次の局面がどれくらい良さそうか」を安く見積もるための補助関数"""
+    def _greedy_value(score, active_now, coords_dict, shortlist_size=4, personalize=True, depth=1):
+        """局面の良さの見積もり。depth段階先読みする。depth<=0の時は「近さ×
+        成功率」だけの簡易値（従来の計算）。depth>=1の時は、候補ごとに
+        「成功した場合」「外した場合」の次局面をdepth-1段で評価し、成功率で
+        重み付けしたEVを使う（pick_targetのEV計算と同じ考え方を、的選びの
+        内部評価にも適用したもの）。
+        簡易値だけだと、的を当てた後の残り点数が小さいほど高く評価されて
+        しまい、その後に続けやすいかを無視してしまう（実際にはフル
+        シミュレーションの真の勝率と逆転するケースがあった）ための修正"""
         if not active_now:
             return 0.0
         def closeness_of(n):
             return abs(score + n - 50) if score + n <= 50 else abs(score + n - 25 - 50)
         shortlist = sorted(active_now, key=closeness_of)[:shortlist_size]
+
+        if depth <= 0:
+            best = -1.0
+            for n in shortlist:
+                c = get_rate_for(n, coords_dict, personalize) / (1 + closeness_of(n))
+                if c > best:
+                    best = c
+            return best
+
+        value_miss = _greedy_value(score, active_now, coords_dict, shortlist_size, personalize, depth - 1)
         best = -1.0
         for n in shortlist:
-            c = get_rate_for(n, coords_dict, personalize) / (1 + closeness_of(n))
-            if c > best:
-                best = c
+            rate = get_rate_for(n, coords_dict, personalize)
+            new_score = score + n
+            if new_score == 50:
+                # 簡易値(rate/(1+closeness))のスケールは0〜1（closeness=0・
+                # rate=1の時に最大1.0）なので、即勝ちもそれと同じ1.0に揃える。
+                # ここを10.0のような規模違いの値にすると、深い先読みで
+                # 「数手先に即勝ちの的があるかも」を見つけた時に値が異常に
+                # 膨らんでしまう（depthを増やした際に実際に発生した不具合）
+                value_success = 1.0
+            else:
+                if new_score > 50:
+                    new_score = 25
+                # nを当てても的は盤面から消えず移動するだけなので、次局面の
+                # 候補からnを除外しない（除外すると「nを当てた直後にまた
+                # ちょうどnを当てれば勝てる」局面を正しく評価できなくなる。
+                # 実際にこれが原因で的の優劣を取り違えるケースがあった）
+                value_success = _greedy_value(new_score, active_now, coords_dict, shortlist_size, personalize, depth - 1)
+            ev = rate * value_success + (1 - rate) * value_miss
+            if ev > best:
+                best = ev
         return best
 
     def pick_target(score, active_now, coords_dict, shortlist_size=4, personalize=True, miss_count=0):
@@ -609,12 +642,13 @@ def run_simulation(
             rate = get_rate_for(n, coords_dict, personalize)
             new_score = score + n
             if new_score == 50:
-                value_success = 10.0  # 即勝ちは最優先
+                value_success = 1.0  # 即勝ち。_greedy_valueと同じ0〜1スケールに揃える
             else:
                 if new_score > 50:
                     new_score = 25
-                remaining_active = [m for m in active_now if m != n]
-                value_success = _greedy_value(new_score, remaining_active, coords_dict, shortlist_size, personalize)
+                # nを当てても的は消えず移動するだけなので、次局面の候補から
+                # nを除外しない（_greedy_value内と同じ理由）
+                value_success = _greedy_value(new_score, active_now, coords_dict, shortlist_size, personalize)
             ev = rate * value_success + (1 - rate) * value_miss
             if ev > best_ev:
                 best_ev = ev
