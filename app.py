@@ -336,7 +336,7 @@ def _other_rate_for(flag_count):
 # 「ガシャ」（本数が得点）になるかの比率。ガシャ記録機能を追加した
 # 2026-10-20以降の実データ（is_success=2または3）から算出すると全体では
 # 約31%だが、ガシャの方が単独より密集度(flag_count)の平均が1.5倍ほど
-# 高い傾向があったため、1.0m以内の候補数に応じて段階的に変える
+# 高い傾向があったため、0.5m以内の候補数に応じて段階的に変える
 # （cold-start用の仮値。サンプルが少ないため密着/近接ペナルティと同様、
 # 今後データが増えたら見直す前提）
 _GASHA_PROB_LOW = 0.20   # 0〜2本
@@ -377,7 +377,7 @@ def _weighted_sample_without_replacement(candidates, weights, k):
 def resolve_partial_hit(target_num, coords_dict, move_fn):
     """「得点あり失敗」の分岐（_other_rate_forで決まる確率）の中身を解決する。別の1本だけに
     当たるか、複数本まとめて倒れる「ガシャ」（倒した本数が得点）になる
-    かは、1.0m以内の候補数が多いほど起きやすいという実データの傾向に
+    かは、0.5m以内の候補数が多いほど起きやすいという実データの傾向に
     合わせて段階的に確率を変える。倒れたスキットルはmove_fnで移動させる。
     戻り値は加算すべき得点（候補が無ければ0）"""
     target_coord = coords_dict.get(target_num)
@@ -392,7 +392,7 @@ def resolve_partial_hit(target_num, coords_dict, move_fn):
         dx = c[0] - target_coord[0]
         dy = c[1] - target_coord[1]
         dist = math.sqrt(dx**2 + dy**2)
-        if dist <= 1.0:
+        if dist <= 0.5:
             candidates.append(n)
             # 近いほど重みが大きい。実データ上、狙った的より左側にある
             # 候補の方が右側にある候補より巻き込まれやすい傾向があった
