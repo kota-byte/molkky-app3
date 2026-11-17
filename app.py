@@ -24,9 +24,6 @@ _fullscreen_court_component = components.declare_component("fullscreen_court", p
 _PLAYER_STORAGE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend_components", "player_storage")
 _player_storage_component = components.declare_component("player_storage", path=_PLAYER_STORAGE_DIR)
 
-_SKITTLE_STORAGE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend_components", "skittle_storage")
-_skittle_storage_component = components.declare_component("skittle_storage", path=_SKITTLE_STORAGE_DIR)
-
 _SCORE_STORAGE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend_components", "score_storage")
 _score_storage_component = components.declare_component("score_storage", path=_SCORE_STORAGE_DIR)
 
@@ -52,6 +49,10 @@ def init_db():
         s.execute(text('''CREATE TABLE IF NOT EXISTS players
                      (id SERIAL PRIMARY KEY,
                       name TEXT UNIQUE)'''))
+        s.execute(text('''CREATE TABLE IF NOT EXISTS skittle_layouts
+                     (identity TEXT PRIMARY KEY,
+                      coords TEXT,
+                      updated_at TIMESTAMPTZ DEFAULT now())'''))
         obstacle_cols = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw']
         for col in obstacle_cols:
             s.execute(text(f"ALTER TABLE throw_logs ADD COLUMN IF NOT EXISTS {col} INTEGER DEFAULT 0"))
@@ -1244,8 +1245,28 @@ def _skittle_identity():
         return "pair:" + "_".join(sorted([st.session_state.current_player, partner]))
     return "solo:" + st.session_state.current_player
 
-def _skittle_storage_key():
-    return f"molkky_skittle_layout_{_skittle_identity()}"
+def _load_skittle_layout_from_db(identity):
+    """DBに保存された盤面配置を読み込む。保存が無ければNone"""
+    result = db_conn.query(
+        "SELECT coords FROM skittle_layouts WHERE identity = :identity",
+        params={"identity": identity}, ttl=0
+    )
+    if result.empty:
+        return None
+    return json.loads(result.iloc[0]["coords"])
+
+def _save_skittle_layout_to_db(identity, coords_list):
+    """盤面配置をDBに保存（無ければ作成、あれば上書き）。共有相手を選んだ
+    2人は同じidentityになるので、別端末・別ブラウザでも次に自分が操作した
+    タイミングで相手が保存した最新の盤面を読み込める"""
+    with db_conn.session as s:
+        s.execute(
+            text('''INSERT INTO skittle_layouts (identity, coords, updated_at)
+                    VALUES (:identity, :coords, now())
+                    ON CONFLICT (identity) DO UPDATE SET coords = :coords, updated_at = now()'''),
+            {"identity": identity, "coords": json.dumps(coords_list)}
+        )
+        s.commit()
 
 if "skittle_m_coords" not in st.session_state:
     st.session_state.skittle_m_coords = {num: None for num in range(1, 13)}
@@ -1262,20 +1283,18 @@ if st.session_state.get('skittle_layout_identity') != _skittle_identity():
     st.session_state.last_target_no_for_autofill = None
 
 if not st.session_state.get('skittle_layout_restore_checked', True):
-    _restored_layout = _skittle_storage_component(
-        action="load", storageKey=_skittle_storage_key(), key="skittle_load")
-    if _restored_layout is not None:
-        st.session_state.skittle_layout_restore_checked = True
-        if _restored_layout:
-            _new_coords = {num: None for num in range(1, 13)}
-            for item in _restored_layout:
-                _n = item.get("n")
-                if _n and 1 <= _n <= 12:
-                    _new_coords[_n] = (item["x"], item["y"])
-            st.session_state.skittle_m_coords = _new_coords
-        # 配置の復元が完了したら、狙う番号の自動入力を復元後のマップで再評価させる
-        st.session_state.last_target_no_for_autofill = None
-        st.rerun()
+    _restored_layout = _load_skittle_layout_from_db(_skittle_identity())
+    st.session_state.skittle_layout_restore_checked = True
+    if _restored_layout:
+        _new_coords = {num: None for num in range(1, 13)}
+        for item in _restored_layout:
+            _n = item.get("n")
+            if _n and 1 <= _n <= 12:
+                _new_coords[_n] = (item["x"], item["y"])
+        st.session_state.skittle_m_coords = _new_coords
+    # 配置の復元が完了したら、狙う番号の自動入力を復元後のマップで再評価させる
+    st.session_state.last_target_no_for_autofill = None
+    st.rerun()
 
 def _mark_skittle_layout_dirty():
     """配置の保存を予約する。直後にst.rerun()する呼び出し元が多く、
@@ -1288,8 +1307,7 @@ if st.session_state.get('skittle_layout_dirty'):
         {"n": n, "x": c[0], "y": c[1]}
         for n, c in st.session_state.skittle_m_coords.items() if c
     ]
-    _skittle_storage_component(
-        action="save", coords=coords_list, storageKey=_skittle_storage_key(), key="skittle_save")
+    _save_skittle_layout_to_db(_skittle_identity(), coords_list)
     st.session_state.skittle_layout_dirty = False
 
 if st.session_state.get('score_dirty'):
