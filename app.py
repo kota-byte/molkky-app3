@@ -545,6 +545,13 @@ def run_simulation(
     # 同じ局面を何度も再計算していた。move_skittleで盤面が動いたら必ず
     # geom_cacheと一緒にクリアする
     greedy_memo = {}
+    # get_rate_forのキャッシュキー(d, 障害物フラグをソートしたタプル)。
+    # geom_cacheがヒットしている間はdもこのタプルも同じ値になるのに、
+    # 以前はrate_memoがヒットする場合でもキー生成のためだけに毎回
+    # tuple(sorted(obs.items()))を作り直していた（プロファイルで全体の
+    # 7割がget_rate_for、その大半がこの再ソートだと判明）。geom_cacheと
+    # 同じタイミングでクリアする
+    rate_key_cache = {}
 
     def get_rate_for(num, coords_dict, personalize=True):
         """現在の配置に基づいてnum番の成功率を計算（キャッシュ付き）。
@@ -552,9 +559,12 @@ def run_simulation(
         if num not in geom_cache:
             geom_cache[num] = get_obstacle_info(num, coords_dict)
         obs, close_count, near_count = geom_cache[num]
-        d = round(coords_dict[num][1] / 0.5) * 0.5
-        d = max(3.0, min(10.0, d))
-        key = (d, tuple(sorted(obs.items())), close_count, near_count, personalize)
+        if num not in rate_key_cache:
+            d = round(coords_dict[num][1] / 0.5) * 0.5
+            d = max(3.0, min(10.0, d))
+            rate_key_cache[num] = (d, tuple(sorted(obs.items())))
+        d, obs_tuple = rate_key_cache[num]
+        key = (d, obs_tuple, close_count, near_count, personalize)
         if key not in rate_memo:
             rate_memo[key] = get_success_rate(d, obs, df, close_count, near_count, personalize=personalize)
         return rate_memo[key]
@@ -569,6 +579,7 @@ def run_simulation(
         new_y = max(0.1, min(10.0, y + dy))
         coords_dict[num] = (new_x, new_y)
         geom_cache.clear()
+        rate_key_cache.clear()
         greedy_memo.clear()
 
     def _greedy_value(score, active_now, coords_dict, shortlist_size=4, personalize=True, depth=1):
@@ -680,6 +691,7 @@ def run_simulation(
             # 各試行ごとに座標をコピー（独立した盤面で進行）
             sim_coords = {n: c for n, c in skittle_coords.items()}
             geom_cache.clear()
+            rate_key_cache.clear()
             greedy_memo.clear()
 
             ms = my_score
