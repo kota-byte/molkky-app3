@@ -538,6 +538,13 @@ def run_simulation(
     # 同じ候補のレートを何度も参照するため、盤面が動くまでキャッシュする
     # （move_skittleで駒が動いたら必ずクリアする）
     geom_cache = {}
+    # _greedy_valueの結果キャッシュ。盤面（coords_dict）が変わらない間は同じ
+    # (score, active_now, depth)に対する評価値は必ず同じになる。50点を超えた
+    # 手は点数に関わらず一律25点に戻るため、shortlist中の複数候補が同じ
+    # new_score=25に着地することがよくあり、pick_target/_greedy_value内で
+    # 同じ局面を何度も再計算していた。move_skittleで盤面が動いたら必ず
+    # geom_cacheと一緒にクリアする
+    greedy_memo = {}
 
     def get_rate_for(num, coords_dict, personalize=True):
         """現在の配置に基づいてnum番の成功率を計算（キャッシュ付き）。
@@ -562,6 +569,7 @@ def run_simulation(
         new_y = max(0.1, min(10.0, y + dy))
         coords_dict[num] = (new_x, new_y)
         geom_cache.clear()
+        greedy_memo.clear()
 
     def _greedy_value(score, active_now, coords_dict, shortlist_size=4, personalize=True, depth=1):
         """局面の良さの見積もり。depth段階先読みする。depth<=0の時は「近さ×
@@ -574,6 +582,11 @@ def run_simulation(
         シミュレーションの真の勝率と逆転するケースがあった）ための修正"""
         if not active_now:
             return 0.0
+        memo_key = (score, tuple(sorted(active_now)), shortlist_size, personalize, depth)
+        cached = greedy_memo.get(memo_key)
+        if cached is not None:
+            return cached
+
         def closeness_of(n):
             return abs(score + n - 50) if score + n <= 50 else abs(score + n - 25 - 50)
         shortlist = sorted(active_now, key=closeness_of)[:shortlist_size]
@@ -584,6 +597,7 @@ def run_simulation(
                 c = get_rate_for(n, coords_dict, personalize) / (1 + closeness_of(n))
                 if c > best:
                     best = c
+            greedy_memo[memo_key] = best
             return best
 
         value_miss = _greedy_value(score, active_now, coords_dict, shortlist_size, personalize, depth - 1)
@@ -609,6 +623,7 @@ def run_simulation(
             ev = rate * value_success + (1 - rate) * value_miss
             if ev > best:
                 best = ev
+        greedy_memo[memo_key] = best
         return best
 
     def pick_target(score, active_now, coords_dict, shortlist_size=4, personalize=True, miss_count=0):
@@ -665,6 +680,7 @@ def run_simulation(
             # 各試行ごとに座標をコピー（独立した盤面で進行）
             sim_coords = {n: c for n, c in skittle_coords.items()}
             geom_cache.clear()
+            greedy_memo.clear()
 
             ms = my_score
             mm = my_miss
