@@ -58,6 +58,7 @@ def init_db():
             s.execute(text(f"ALTER TABLE throw_logs ADD COLUMN IF NOT EXISTS {col} INTEGER DEFAULT 0"))
         s.execute(text("ALTER TABLE throw_logs ADD COLUMN IF NOT EXISTS player TEXT"))
         s.execute(text("ALTER TABLE throw_logs ADD COLUMN IF NOT EXISTS gasha_count INTEGER"))
+        s.execute(text("ALTER TABLE players ADD COLUMN IF NOT EXISTS share_partner TEXT"))
 
         # 導入前の既存データ（プレイヤー未設定）は kota のデータとして移行
         s.execute(text("INSERT INTO players (name) VALUES ('kota') ON CONFLICT (name) DO NOTHING"))
@@ -1070,7 +1071,17 @@ if st.query_params.get("page") == "sim":
     st.session_state['_page'] = "🤖 AI戦術提示シミュレーター"
 
 if "board_share_partner" not in st.session_state:
-    st.session_state.board_share_partner = None
+    # 共有相手の選択はプレイヤー名に紐づけてDBに保存（ブラウザのlocalStorage
+    # ではなく）。再読み込みやブラウザ・端末が変わっても、同じ名前でログイン
+    # すれば前回選んだ相手が復元される
+    _share_row = db_conn.query(
+        "SELECT share_partner FROM players WHERE name = :name",
+        params={"name": st.session_state.current_player}, ttl=0
+    )
+    st.session_state.board_share_partner = (
+        _share_row.iloc[0]["share_partner"]
+        if not _share_row.empty and _share_row.iloc[0]["share_partner"] else None
+    )
 
 with st.container(key="menu_switch_row"):
     _page_options = ["🎯 投擲データ記録", "🤖 AI戦術提示シミュレーター", "📋 評価実験"]
@@ -2121,7 +2132,15 @@ else:
             "盤面を共有する相手", _share_options, index=_share_index,
             label_visibility="collapsed", key="board_share_partner_select",
         )
-        st.session_state.board_share_partner = None if _selected_partner == "（共有しない）" else _selected_partner
+        _new_partner = None if _selected_partner == "（共有しない）" else _selected_partner
+        if _new_partner != st.session_state.board_share_partner:
+            st.session_state.board_share_partner = _new_partner
+            with db_conn.session as s:
+                s.execute(
+                    text("UPDATE players SET share_partner = :partner WHERE name = :name"),
+                    {"partner": _new_partner, "name": st.session_state.current_player}
+                )
+                s.commit()
 
     exp = st.session_state.experiment
 
