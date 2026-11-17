@@ -1338,6 +1338,10 @@ def _poll_skittle_layout_from_camera():
             _new_coords[_n] = (item["x"], item["y"])
     st.session_state.skittle_m_coords = _new_coords
     st.session_state.last_target_no_for_autofill = None
+    # canvas_versionを進めてcanvas_keyを変える。これをしないと画面2のst_canvasが
+    # 古いキーのまま＝古い内部状態を表示し続けてしまう（書き戻し自体は
+    # skittle_layout_last_seenで別途無効化しているので、ここは表示の更新のため）
+    st.session_state['canvas_version'] = st.session_state.get('canvas_version', 0) + 1
     st.rerun()
 
 _poll_skittle_layout_from_camera()
@@ -2030,7 +2034,12 @@ elif page == "🤖 AI戦術提示シミュレーター":
             key=canvas_key,
         )
 
-        if canvas_result.json_data is not None:
+        # カメラ（live計測システム）からデータを読み込んだことのある盤面では、
+        # このキャンバスへの書き戻しを無効化する。再描画のたびにこのキャンバス
+        # 自身が報告してくる位置がわずかにズレ、それを拾って保存し直すことを
+        # 繰り返すうちに誤差が積み重なり、精密なカメラ座標を壊してしまうため
+        # （手動で細かく調整したい場合は「全画面コートで配置」を使う）
+        if canvas_result.json_data is not None and not st.session_state.get('skittle_layout_last_seen'):
             rev = {v: k for k, v in emoji_pins.items()}
             new_coords = dict(st.session_state.skittle_m_coords)
             changed = False
@@ -2038,25 +2047,41 @@ elif page == "🤖 AI戦術提示シミュレーター":
                 if obj.get("type") == "text" and obj.get("text","").strip() in rev:
                     pn = rev[obj["text"].strip()]
                     rx_raw, ry_raw = obj["left"], obj["top"]
+                    # キャンバスは「ドラッグされたかどうか」を教えてくれず、毎回
+                    # 全ピンの現在位置をそのまま返してくる。しかもこの解像度は
+                    # 1mあたり24pxしかなく、近接したピン（カメラ由来の精密な
+                    # 座標同士など）が同じピクセルに丸められて区別できなくなる
+                    # ことがある。0.2mグリッド単位で厳密比較すると、この丸め
+                    # 誤差だけで「変更あり」と誤判定してしまうため、ある程度の
+                    # 許容誤差（MOVE_TOLERANCE_M）を超えて動いた時だけ、実際に
+                    # ユーザーがドラッグしたとみなす
+                    MOVE_TOLERANCE_M = 0.1
+                    stored = new_coords[pn]
                     if rx_raw < 130:
-                        if new_coords[pn] is not None:
+                        if stored is not None:
                             new_coords[pn] = None
                             changed = True
                     else:
                         rx_m = (rx_raw - CENTER_X) / SCALE_UNIT
                         ry_m = (COURT_HEIGHT - ry_raw) / SCALE_UNIT
-                        rx = round(rx_m / 0.2) * 0.2
-                        ry = round(ry_m / 0.2) * 0.2
-
-                        if ry > 0:
+                        moved = (
+                            stored is None
+                            or abs(stored[0] - rx_m) > MOVE_TOLERANCE_M
+                            or abs(stored[1] - ry_m) > MOVE_TOLERANCE_M
+                        )
+                        if ry_m > 0 and moved:
+                            rx = round(rx_m / 0.2) * 0.2
+                            ry = round(ry_m / 0.2) * 0.2
                             new_val = (rx, ry)
                             if new_coords[pn] != new_val:
                                 new_coords[pn] = new_val
                                 changed = True
-            # changedフラグが立った時だけ更新
+            # changedフラグが立った時だけ更新。canvas_versionはここでは進めない
+            # （キャンバス自身の操作結果を反映するだけなので、キー変更＝再マウントは
+            # 不要。むしろ進めてしまうと再マウント直後の一時的な描画結果を
+            # まだ動いていないのに「また変更された」と誤検出し、不安定になる）
             if changed:
                 st.session_state.skittle_m_coords = new_coords
-                st.session_state['canvas_version'] = st.session_state.get('canvas_version', 0) + 1
                 _mark_skittle_layout_dirty()
                 st.rerun()
 
