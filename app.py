@@ -1257,14 +1257,14 @@ def _skittle_identity():
     return "solo:" + st.session_state.current_player
 
 def _load_skittle_layout_from_db(identity):
-    """DBに保存された盤面配置を読み込む。保存が無ければNone"""
+    """DBに保存された盤面配置と更新日時を読み込む。保存が無ければ(None, None)"""
     result = db_conn.query(
-        "SELECT coords FROM skittle_layouts WHERE identity = :identity",
+        "SELECT coords, updated_at FROM skittle_layouts WHERE identity = :identity",
         params={"identity": identity}, ttl=0
     )
     if result.empty:
-        return None
-    return json.loads(result.iloc[0]["coords"])
+        return None, None
+    return json.loads(result.iloc[0]["coords"]), result.iloc[0]["updated_at"]
 
 def _save_skittle_layout_to_db(identity, coords_list):
     """盤面配置をDBに保存（無ければ作成、あれば上書き）。共有相手を選んだ
@@ -1294,8 +1294,9 @@ if st.session_state.get('skittle_layout_identity') != _skittle_identity():
     st.session_state.last_target_no_for_autofill = None
 
 if not st.session_state.get('skittle_layout_restore_checked', True):
-    _restored_layout = _load_skittle_layout_from_db(_skittle_identity())
+    _restored_layout, _restored_updated_at = _load_skittle_layout_from_db(_skittle_identity())
     st.session_state.skittle_layout_restore_checked = True
+    st.session_state.skittle_layout_last_seen = _restored_updated_at
     if _restored_layout:
         _new_coords = {num: None for num in range(1, 13)}
         for item in _restored_layout:
@@ -1320,6 +1321,26 @@ if st.session_state.get('skittle_layout_dirty'):
     ]
     _save_skittle_layout_to_db(_skittle_identity(), coords_list)
     st.session_state.skittle_layout_dirty = False
+
+@st.fragment(run_every=2)
+def _poll_skittle_layout_from_camera():
+    """カメラ側（live計測システム）が盤面を更新していないか2秒おきに確認する。
+    更新日時が前回見た値と変わっていたら、盤面全体を読み込み直して画面に反映する
+    （カメラ側が投擲モード→静止モードに切り替わるたびにDBへ書き込む想定）"""
+    _coords, _updated_at = _load_skittle_layout_from_db(_skittle_identity())
+    if _updated_at is None or _updated_at == st.session_state.get('skittle_layout_last_seen'):
+        return
+    st.session_state.skittle_layout_last_seen = _updated_at
+    _new_coords = {num: None for num in range(1, 13)}
+    for item in (_coords or []):
+        _n = item.get("n")
+        if _n and 1 <= _n <= 12:
+            _new_coords[_n] = (item["x"], item["y"])
+    st.session_state.skittle_m_coords = _new_coords
+    st.session_state.last_target_no_for_autofill = None
+    st.rerun()
+
+_poll_skittle_layout_from_camera()
 
 if st.session_state.get('score_dirty'):
     _ps_for_save = get_player_state()
