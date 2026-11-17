@@ -1322,11 +1322,13 @@ if st.session_state.get('skittle_layout_dirty'):
     _save_skittle_layout_to_db(_skittle_identity(), coords_list)
     st.session_state.skittle_layout_dirty = False
 
-@st.fragment(run_every=2)
+@st.fragment(run_every=5)
 def _poll_skittle_layout_from_camera():
-    """カメラ側（live計測システム）が盤面を更新していないか2秒おきに確認する。
+    """カメラ側（live計測システム）が盤面を更新していないか5秒おきに確認する。
     更新日時が前回見た値と変わっていたら、盤面全体を読み込み直して画面に反映する
-    （カメラ側が投擲モード→静止モードに切り替わるたびにDBへ書き込む想定）"""
+    （カメラ側が投擲モード→静止モードに切り替わるたびにDBへ書き込む想定）。
+    問い合わせ自体はDBへのネットワーク通信なので、間隔を詰めすぎると、その往復に
+    かかる時間だけ操作の反応が一瞬止まる（カクつく）。間隔を空けて頻度を下げている"""
     _coords, _updated_at = _load_skittle_layout_from_db(_skittle_identity())
     if _updated_at is None or _updated_at == st.session_state.get('skittle_layout_last_seen'):
         return
