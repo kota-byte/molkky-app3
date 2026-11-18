@@ -4,12 +4,19 @@ import json
 import base64
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from sqlalchemy import text
 from streamlit_drawable_canvas import st_canvas
 import streamlit.components.v1 as components
 import gspread
 from google.oauth2.service_account import Credentials
+
+_JST = timezone(timedelta(hours=9))
+
+def _now_jst():
+    """記録用の現在時刻（日本時間）。サーバーが別タイムゾーンで動いていても
+    スプレッドシート上のタイムスタンプが実際の日本時間とずれないようにする"""
+    return datetime.now(_JST)
 
 st.set_page_config(page_title="モルック戦術支援アプリ", layout="centered")
 
@@ -1061,7 +1068,7 @@ def _log_match_end(result):
         "25点戻り回数（相手）": exp["opp_bounce_count"],
         "3連続ミスによる敗北": "あり" if exp["miss_loss"] else "なし",
         "総投擲数": exp["throw_count"],
-        "タイムスタンプ": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "タイムスタンプ": _now_jst().strftime("%Y-%m-%d %H:%M:%S"),
     })
     _reset_match_counters()
     _reset_current_game()
@@ -1348,7 +1355,7 @@ def _poll_skittle_layout_from_camera():
     if _exp and _exp.get('recording'):
         append_skittle_snapshot({
             "ユーザーID": st.session_state.current_player,
-            "タイムスタンプ": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "タイムスタンプ": _now_jst().strftime("%Y-%m-%d %H:%M:%S"),
             "試合番号": _exp["match_number"],
             "条件": _exp["condition"],
             "スキットル配置": json.dumps(
@@ -1727,7 +1734,7 @@ elif page == "🎯 投擲データ記録":
                               "w": int(st.session_state.obstacles['w']),
                               "nw": int(st.session_state.obstacles['nw']),
                               "player": st.session_state.current_player,
-                              "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                              "ts": _now_jst().strftime("%Y-%m-%d %H:%M:%S"),
                               "gasha_count": gasha_count,
                           })
                 s.commit()
@@ -1760,7 +1767,7 @@ elif page == "🎯 投擲データ記録":
                 "投擲結果": success_val,
                 "倒れたスキットル番号": hit_no if success_val == "得点あり失敗" and hit_no else "",
                 "スキットル配置": snapshot.get("skittle_coords_json", ""),
-                "タイムスタンプ": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "タイムスタンプ": _now_jst().strftime("%Y-%m-%d %H:%M:%S"),
                 "スキットル配置（投擲後）": post_coords_json,
             })
 
@@ -1902,7 +1909,7 @@ elif page == "🎯 投擲データ記録":
         st.download_button(
             label="📥 これまでの全投擲データをCSVでダウンロード",
             data=csv_data,
-            file_name=f"molkky_throw_logs_{datetime.now().strftime('%Y%m%d')}.csv",
+            file_name=f"molkky_throw_logs_{_now_jst().strftime('%Y%m%d')}.csv",
             mime="text/csv",
             use_container_width=True
         )
@@ -2258,7 +2265,7 @@ else:
         )
         ok = append_skittle_snapshot({
             "ユーザーID": st.session_state.current_player,
-            "タイムスタンプ": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "タイムスタンプ": _now_jst().strftime("%Y-%m-%d %H:%M:%S"),
             "試合番号": exp["match_number"],
             "条件": exp["condition"],
             "スキットル配置": coords_json,
