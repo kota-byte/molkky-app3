@@ -1346,7 +1346,11 @@ def _poll_skittle_layout_from_camera():
     st.session_state['canvas_version'] = st.session_state.get('canvas_version', 0) + 1
     st.rerun()
 
-_poll_skittle_layout_from_camera()
+if page != "🎯 投擲データ記録":
+    # 投擲データ記録画面では盤面の自動更新は不要な上、記録ボタンを押した
+    # 処理の途中でこのポーリングのst.rerun()が割り込むと、同じ投擲が
+    # スプレッドシートに二重に記録されるおそれがあるため、この画面では止める
+    _poll_skittle_layout_from_camera()
 
 if st.session_state.get('score_dirty'):
     _ps_for_save = get_player_state()
