@@ -1340,6 +1340,21 @@ def _poll_skittle_layout_from_camera():
             _new_coords[_n] = (item["x"], item["y"])
     st.session_state.skittle_m_coords = _new_coords
     st.session_state.last_target_no_for_autofill = None
+    # 記録中（評価実験で試合をスタートしている間）だけ、カメラが送ってきた
+    # この配置をスプレッドシートにも自動で残す（「📍 配置を記録する」ボタンを
+    # 手動で押す代わり）。この関数は冒頭のupdated_atチェックで同じ更新を
+    # 2回処理しないようになっているので、ここでの二重記録は起きない
+    _exp = st.session_state.get('experiment')
+    if _exp and _exp.get('recording'):
+        append_skittle_snapshot({
+            "ユーザーID": st.session_state.current_player,
+            "タイムスタンプ": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "試合番号": _exp["match_number"],
+            "条件": _exp["condition"],
+            "スキットル配置": json.dumps(
+                {n: c for n, c in _new_coords.items() if c}, ensure_ascii=False
+            ),
+        })
     # canvas_versionを進めてcanvas_keyを変える。これをしないと画面2のst_canvasが
     # 古いキーのまま＝古い内部状態を表示し続けてしまう（書き戻し自体は
     # skittle_layout_last_seenで別途無効化しているので、ここは表示の更新のため）
