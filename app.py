@@ -18,6 +18,15 @@ def _now_jst():
     スプレッドシート上のタイムスタンプが実際の日本時間とずれないようにする"""
     return datetime.now(_JST)
 
+def _coords_json(coords_dict):
+    """スキットル配置をスプレッドシート記録用のJSON文字列にする。
+    座標は浮動小数点の誤差で3.8000000000000003のような桁数になりがちなので、
+    小数点第一位に丸めてから書き出す"""
+    return json.dumps(
+        {n: [round(c[0], 1), round(c[1], 1)] for n, c in coords_dict.items() if c},
+        ensure_ascii=False
+    )
+
 st.set_page_config(page_title="モルック戦術支援アプリ", layout="centered")
 
 db_conn = st.connection("sql", type="sql")
@@ -1358,9 +1367,7 @@ def _poll_skittle_layout_from_camera():
             "タイムスタンプ": _now_jst().strftime("%Y-%m-%d %H:%M:%S"),
             "試合番号": _exp["match_number"],
             "条件": _exp["condition"],
-            "スキットル配置": json.dumps(
-                {n: c for n, c in _new_coords.items() if c}, ensure_ascii=False
-            ),
+            "スキットル配置": _coords_json(_new_coords),
         })
     # canvas_versionを進めてcanvas_keyを変える。これをしないと画面2のst_canvasが
     # 古いキーのまま＝古い内部状態を表示し続けてしまう（書き戻し自体は
@@ -1745,9 +1752,7 @@ elif page == "🎯 投擲データ記録":
         if exp['recording']:
             exp['throw_count'] += 1
             snapshot = st.session_state.pending_throw_snapshot
-            post_coords_json = json.dumps(
-                {n: c for n, c in st.session_state.skittle_m_coords.items() if c}, ensure_ascii=False
-            )
+            post_coords_json = _coords_json(st.session_state.skittle_m_coords)
             append_throw_log({
                 "ユーザーID": st.session_state.current_player,
                 "試合番号": exp["match_number"],
@@ -2133,9 +2138,7 @@ elif page == "🤖 AI戦術提示シミュレーター":
                 st.session_state.pending_throw_snapshot = {
                     "my_score": my_score, "opp_score": st.session_state.opponents[0]["score"],
                     "my_miss": my_miss, "opp_miss": st.session_state.opponents[0]["miss"],
-                    "skittle_coords_json": json.dumps(
-                        {n: c for n, c in st.session_state.skittle_m_coords.items() if c}, ensure_ascii=False
-                    ),
+                    "skittle_coords_json": _coords_json(st.session_state.skittle_m_coords),
                     "ai_top1_num": "", "ai_top1_prob": "",
                     "ai_top2_num": "", "ai_top2_prob": "",
                     "ai_top3_num": "", "ai_top3_prob": "",
@@ -2164,9 +2167,7 @@ elif page == "🤖 AI戦術提示シミュレーター":
                         snapshot = {
                             "my_score": my_score, "opp_score": st.session_state.opponents[0]["score"],
                             "my_miss": my_miss, "opp_miss": st.session_state.opponents[0]["miss"],
-                            "skittle_coords_json": json.dumps(
-                                {n: c for n, c in st.session_state.skittle_m_coords.items() if c}, ensure_ascii=False
-                            ),
+                            "skittle_coords_json": _coords_json(st.session_state.skittle_m_coords),
                         }
                         for rank in range(3):
                             if rank < len(top3):
@@ -2260,9 +2261,7 @@ else:
 
     st.caption("実験者がスキットル配置だけを記録する（記録中かどうかに関わらず使えます）")
     if st.button("📍 配置を記録する", use_container_width=True):
-        coords_json = json.dumps(
-            {n: c for n, c in st.session_state.skittle_m_coords.items() if c}, ensure_ascii=False
-        )
+        coords_json = _coords_json(st.session_state.skittle_m_coords)
         ok = append_skittle_snapshot({
             "ユーザーID": st.session_state.current_player,
             "タイムスタンプ": _now_jst().strftime("%Y-%m-%d %H:%M:%S"),
