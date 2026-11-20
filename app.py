@@ -2131,6 +2131,22 @@ elif page == "🤖 AI戦術提示シミュレーター":
         exp_recording = st.session_state.experiment["recording"]
         exp_condition = st.session_state.experiment["condition"]
         _no_app_mode = exp_recording and exp_condition != "アプリあり"
+
+        _SIM_SPEED_OPTIONS = {
+            "速い（7〜11秒）": 300,
+            "標準（20〜26秒）": 800,
+            "精密（40〜59秒）": 2000,
+        }
+        if not _no_app_mode:
+            _sim_speed_label = st.radio(
+                "シミュレーションの精度",
+                list(_SIM_SPEED_OPTIONS.keys()),
+                index=1,
+                horizontal=True,
+                key="sim_speed_choice",
+            )
+            _n_sim_selected = _SIM_SPEED_OPTIONS[_sim_speed_label]
+
         btn_label = "📸 この状態を記録する" if _no_app_mode else "🚀 勝利確率を計算する"
         if st.button(btn_label, type="primary", use_container_width=True):
             if _no_app_mode:
@@ -2158,7 +2174,7 @@ elif page == "🤖 AI戦術提示シミュレーター":
                             opponents=st.session_state.opponents,
                             skittle_coords=st.session_state.skittle_m_coords,
                             df=df,
-                            n_sim=800
+                            n_sim=_n_sim_selected
                         )
 
                     top3 = sorted(results.items(), key=lambda x: x[1], reverse=True)[:3] if results else []
