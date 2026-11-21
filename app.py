@@ -1058,22 +1058,45 @@ def _load_partner_score(partner_name):
         return None
     return int(result.iloc[0]["score"]), int(result.iloc[0]["miss"])
 
+def _score_card_html(name, score, miss, icon="👤", dashed=False, placeholder=False):
+    """得点カードのHTML（ユーザー名／大きな得点／連続ミスを表す3つの丸）を組み立てる。
+    dashedは共有相手カードであることを示す破線枠、placeholderは相手未設定時の表示"""
+    circles = "".join(
+        f'<span style="width:15px;height:15px;border-radius:50%;display:inline-block;'
+        f'margin:0 3px;background:{"#FF6B35" if i < miss else "transparent"};'
+        f'border:2px solid {"#FF6B35" if i < miss else "#e3cfae"};"></span>'
+        for i in range(3)
+    )
+    score_display = "―" if placeholder else f"{score}"
+    border_style = "dashed" if dashed else "solid"
+    return f'''
+    <div style="text-align:center; padding:14px 10px; background:#FFFBF3;
+                border-radius:18px; border:2px {border_style} #f1dcb8;">
+        <div style="font-size:14px; font-weight:700; color:#9A8C7A; white-space:nowrap;
+                    overflow:hidden; text-overflow:ellipsis;">{icon} {name}</div>
+        <div style="font-family:'M PLUS Rounded 1c',sans-serif; font-size:50px; font-weight:800;
+                    color:#FF6B35; line-height:1.15; margin:2px 0;">{score_display}<span
+                    style="font-size:16px; font-weight:600; color:#9A8C7A; margin-left:2px;">点</span></div>
+        <div style="margin-top:2px;">{circles}</div>
+    </div>
+    '''
+
 @st.fragment(run_every=5)
-def _show_partner_score():
-    """共有相手の得点を5秒おきに表示し直す。run_every内でst.rerun()を呼んで
+def _render_partner_card():
+    """共有相手の得点カードを5秒おきに表示し直す。run_every内でst.rerun()を呼んで
     いないため、このフラグメント自身の再描画だけで完結し、画面1の投擲記録
     ボタンの処理中にアプリ全体を巻き込んで再実行してしまう心配がない
     （カメラ配置のポーリングを画面1で止めている理由と同じ問題を避けるため）"""
     partner = st.session_state.get('board_share_partner')
     if not partner:
+        st.markdown(
+            _score_card_html("共有相手なし", 0, 0, icon="🔗", dashed=True, placeholder=True),
+            unsafe_allow_html=True,
+        )
         return
     partner_data = _load_partner_score(partner)
-    if partner_data is None:
-        st.caption(f"🤝 {partner}：まだ得点記録なし")
-        return
-    p_score, p_miss = partner_data
-    st.metric(f"🤝 {partner}の得点", f"{p_score}点")
-    st.caption(f"{partner}の連続ミス：{p_miss}回")
+    p_score, p_miss = partner_data if partner_data is not None else (0, 0)
+    st.markdown(_score_card_html(partner, p_score, p_miss, icon="🤝", dashed=True), unsafe_allow_html=True)
 
 @st.fragment(run_every=5)
 def _opponent1_inputs(opp):
@@ -1494,6 +1517,7 @@ def render_theme_css():
     """全画面共通の配色テーマ（暖色背景＋オレンジのアクセント）"""
     st.markdown("""
         <style>
+        @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@800&display=swap');
         .stApp {
             background: #FFE4B5;
         }
@@ -1690,11 +1714,16 @@ elif page == "🎯 投擲データ記録":
 
     ps = get_player_state()
 
-    # 得点表示
-    st.metric("自分の得点", f"{ps['my_score_game']}点")
-    st.caption(f"連続ミス：{ps['my_miss_game']}回")
+    # 得点表示（自分／共有相手を横並びのカードで表示）
+    col_me, col_partner = st.columns(2)
+    with col_me:
+        st.markdown(
+            _score_card_html(st.session_state.current_player, ps['my_score_game'], ps['my_miss_game']),
+            unsafe_allow_html=True,
+        )
+    with col_partner:
+        _render_partner_card()
     st.caption(f"累計得点：{ps['my_total_score']}点")
-    _show_partner_score()
 
     if ps['game_message']:
         st.info(ps['game_message'])
