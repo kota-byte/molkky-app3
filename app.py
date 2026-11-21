@@ -74,6 +74,10 @@ def init_db():
                       score INTEGER,
                       miss INTEGER,
                       updated_at TIMESTAMPTZ DEFAULT now())'''))
+        s.execute(text('''CREATE TABLE IF NOT EXISTS pair_turn
+                     (identity TEXT PRIMARY KEY,
+                      current_turn TEXT,
+                      updated_at TIMESTAMPTZ DEFAULT now())'''))
         obstacle_cols = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw']
         for col in obstacle_cols:
             s.execute(text(f"ALTER TABLE throw_logs ADD COLUMN IF NOT EXISTS {col} INTEGER DEFAULT 0"))
@@ -1098,6 +1102,45 @@ def _render_partner_card():
     p_score, p_miss = partner_data if partner_data is not None else (0, 0)
     st.markdown(_score_card_html(partner, p_score, p_miss, icon="🤝", dashed=True), unsafe_allow_html=True)
 
+def _turn_identity():
+    """「今どちらの番か」を保存するキー。盤面共有・得点共有と同じ識別子を使う"""
+    return _skittle_identity()
+
+def _load_current_turn(identity):
+    """保存されている「今の番」をDBから読む。記録がまだ無ければNone"""
+    result = db_conn.query(
+        "SELECT current_turn FROM pair_turn WHERE identity = :identity",
+        params={"identity": identity}, ttl=0
+    )
+    if result.empty:
+        return None
+    return result.iloc[0]["current_turn"]
+
+def _set_current_turn(identity, player_name):
+    """「今の番」をDBに保存する（記録を保存するたびに相手へ交代させる）"""
+    with db_conn.session as s:
+        s.execute(
+            text('''INSERT INTO pair_turn (identity, current_turn, updated_at)
+                    VALUES (:identity, :turn, now())
+                    ON CONFLICT (identity) DO UPDATE SET current_turn = :turn, updated_at = now()'''),
+            {"identity": identity, "turn": player_name}
+        )
+        s.commit()
+
+@st.fragment(run_every=5)
+def _render_turn_banner():
+    """共有相手がいる時だけ、今どちらの番かを5秒おきに表示し直す。
+    _render_partner_card()と同じ理由でst.rerun()は呼ばない"""
+    partner = st.session_state.get('board_share_partner')
+    if not partner:
+        return
+    me = st.session_state.current_player
+    current_turn = _load_current_turn(_turn_identity())
+    if current_turn is None or current_turn == me:
+        st.success(f"🎯 あなたの番です（{me}）")
+    else:
+        st.info(f"⏳ {current_turn}さんの番です")
+
 @st.fragment(run_every=5)
 def _opponent1_inputs(opp):
     """シミュレーター画面の「相手1」の得点・連続ミス入力。board_share_partnerで
@@ -1714,6 +1757,9 @@ elif page == "🎯 投擲データ記録":
 
     ps = get_player_state()
 
+    # 今どちらの番か（共有相手がいる時だけ表示）
+    _render_turn_banner()
+
     # 得点表示（自分／共有相手を縦に並べたカードで表示）
     st.markdown(
         _score_card_html(st.session_state.current_player, ps['my_score_game'], ps['my_miss_game']),
@@ -1754,6 +1800,8 @@ elif page == "🎯 投擲データ記録":
                     with db_conn.session as s:
                         s.execute(text("DELETE FROM throw_logs WHERE id = :id"), {"id": _undo['throw_log_id']})
                         s.commit()
+                if _undo.get('prev_turn') is not None:
+                    _set_current_turn(_turn_identity(), _undo['prev_turn'])
                 st.session_state['last_throw_undo'] = None
                 st.cache_data.clear()
                 _mark_score_dirty()
@@ -1866,6 +1914,7 @@ elif page == "🎯 投擲データ記録":
         }[success_val]
         # 「ひとつ戻る」用に、変更を加える前の状態を控えておく
         _exp = st.session_state.experiment
+        _partner = st.session_state.get('board_share_partner')
         st.session_state['last_throw_undo'] = {
             'player': st.session_state.current_player,
             'my_score_game': ps['my_score_game'],
@@ -1877,6 +1926,7 @@ elif page == "🎯 投擲データ記録":
             'exp_my_bounce_count': _exp['my_bounce_count'],
             'exp_miss_loss': _exp['miss_loss'],
             'throw_log_id': None,
+            'prev_turn': _load_current_turn(_turn_identity()) if _partner else None,
         }
         if not is_opening_gasha:
             # 「ガシャ」（特定の1本を狙わない投擲）は、狙った番号・障害物配置という前提が
@@ -1994,6 +2044,9 @@ elif page == "🎯 投擲データ記録":
             st.session_state.obstacles[k] = False
         st.cache_data.clear()
         _mark_score_dirty()
+        if _partner:
+            # 自分が投げ終わったので、次は相手の番にする
+            _set_current_turn(_turn_identity(), _partner)
         st.toast("データを保存しました！", icon="✅")
         st.rerun()
 
