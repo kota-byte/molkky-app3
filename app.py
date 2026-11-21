@@ -1721,7 +1721,6 @@ elif page == "🎯 投擲データ記録":
     )
     st.write("")
     _render_partner_card()
-    st.caption(f"累計得点：{ps['my_total_score']}点")
 
     if ps['game_message']:
         st.info(ps['game_message'])
@@ -1729,13 +1728,36 @@ elif page == "🎯 投擲データ記録":
             ps['game_message'] = None
             st.rerun()
 
-    # リセットボタン
+    # リセット・ひとつ戻るボタン
     with st.container(key="reset_btn_row"):
-        if st.button("🔄 得点をリセット"):
-            ps['my_score_game'] = 0
-            ps['my_miss_game'] = 0
-            _mark_score_dirty()
-            st.rerun()
+        col_reset, col_undo = st.columns(2)
+        with col_reset:
+            if st.button("🔄 得点をリセット"):
+                ps['my_score_game'] = 0
+                ps['my_miss_game'] = 0
+                _mark_score_dirty()
+                st.rerun()
+        with col_undo:
+            _undo = st.session_state.get('last_throw_undo')
+            _undo_disabled = _undo is None or _undo.get('player') != st.session_state.current_player
+            if st.button("↩️ ひとつ戻る", disabled=_undo_disabled):
+                ps['my_score_game'] = _undo['my_score_game']
+                ps['my_miss_game'] = _undo['my_miss_game']
+                ps['my_total_score'] = _undo['my_total_score']
+                ps['game_message'] = _undo['game_message']
+                st.session_state.obstacles = _undo['obstacles']
+                _exp = st.session_state.experiment
+                _exp['throw_count'] = _undo['exp_throw_count']
+                _exp['my_bounce_count'] = _undo['exp_my_bounce_count']
+                _exp['miss_loss'] = _undo['exp_miss_loss']
+                if _undo['throw_log_id'] is not None:
+                    with db_conn.session as s:
+                        s.execute(text("DELETE FROM throw_logs WHERE id = :id"), {"id": _undo['throw_log_id']})
+                        s.commit()
+                st.session_state['last_throw_undo'] = None
+                st.cache_data.clear()
+                _mark_score_dirty()
+                st.rerun()
 
     st.divider()
 
@@ -1842,13 +1864,28 @@ elif page == "🎯 投擲データ記録":
         is_success_val = {
             "成功": 1, "得点あり失敗": 2, "ガシャ（複数本倒れた）": 3, "完全ミス": 0
         }[success_val]
+        # 「ひとつ戻る」用に、変更を加える前の状態を控えておく
+        _exp = st.session_state.experiment
+        st.session_state['last_throw_undo'] = {
+            'player': st.session_state.current_player,
+            'my_score_game': ps['my_score_game'],
+            'my_miss_game': ps['my_miss_game'],
+            'my_total_score': ps['my_total_score'],
+            'game_message': ps['game_message'],
+            'obstacles': dict(st.session_state.obstacles),
+            'exp_throw_count': _exp['throw_count'],
+            'exp_my_bounce_count': _exp['my_bounce_count'],
+            'exp_miss_loss': _exp['miss_loss'],
+            'throw_log_id': None,
+        }
         if not is_opening_gasha:
             # 「ガシャ」（特定の1本を狙わない投擲）は、狙った番号・障害物配置という前提が
             # 成り立たないため、距離別成功率の統計には使わずDBに保存しない
             with db_conn.session as s:
-                s.execute(text('''INSERT INTO throw_logs
+                _inserted_id = s.execute(text('''INSERT INTO throw_logs
                              (dist, target_no, is_success, n, ne, e, se, s, sw, w, nw, player, timestamp, gasha_count)
-                             VALUES (:dist, :target_no, :is_success, :n, :ne, :e, :se, :s, :sw, :w, :nw, :player, :ts, :gasha_count)'''),
+                             VALUES (:dist, :target_no, :is_success, :n, :ne, :e, :se, :s, :sw, :w, :nw, :player, :ts, :gasha_count)
+                             RETURNING id'''),
                           {
                               "dist": dist,
                               "target_no": target_no,
@@ -1864,8 +1901,9 @@ elif page == "🎯 投擲データ記録":
                               "player": st.session_state.current_player,
                               "ts": _now_jst().strftime("%Y-%m-%d %H:%M:%S"),
                               "gasha_count": gasha_count,
-                          })
+                          }).scalar()
                 s.commit()
+            st.session_state['last_throw_undo']['throw_log_id'] = _inserted_id
 
         # 実験ログ：記録中（評価実験画面でスタートした状態）のみ、AIシミュレーター画面で
         # 記録した投擲前スナップショットと今回の結果を合体してSheetsに追記する
@@ -2417,5 +2455,6 @@ if st.button("ログアウト", use_container_width=True):
     # board_share_partnerを消して、次にログインするプレイヤーの分をDBから
     # 読み直させる（消さないと前のプレイヤーの共有相手設定を引きずってしまう）
     st.session_state.pop('board_share_partner', None)
+    st.session_state.pop('last_throw_undo', None)
     _reset_experiment_session()
     st.rerun()
