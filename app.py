@@ -1120,22 +1120,16 @@ def _set_current_turn(identity, player_name):
 
 @st.fragment(run_every=5)
 def _render_score_section(my_name, my_score, my_miss):
-    """番バナー・自分の得点カード・共有相手の得点カードをまとめて5秒おきに
-    表示し直す。run_every内でst.rerun()を呼んでいないため、このフラグメント
-    自身の再描画だけで完結し、画面1の投擲記録ボタンの処理中にアプリ全体を
-    巻き込んで再実行してしまう心配がない（カメラ配置のポーリングを画面1で
-    止めている理由と同じ問題を避けるため）。自分のカードの枠は「今の番」に
-    応じて緑に強調／グレーに沈めるので、2枚のカードを同じタイミングで
-    更新する必要があり、1つのフラグメントにまとめている"""
+    """自分の得点カード・共有相手の得点カードをまとめて5秒おきに表示し直す。
+    run_every内でst.rerun()を呼んでいないため、このフラグメント自身の再描画
+    だけで完結し、画面1の投擲記録ボタンの処理中にアプリ全体を巻き込んで
+    再実行してしまう心配がない（カメラ配置のポーリングを画面1で止めている
+    理由と同じ問題を避けるため）。自分のカードの枠は「今の番」に応じて緑に
+    強調／グレーに沈めるので、2枚のカードを同じタイミングで更新する必要が
+    あり、1つのフラグメントにまとめている"""
     partner = st.session_state.get('board_share_partner')
     current_turn = _load_current_turn(_turn_identity()) if partner else None
     my_turn = (not partner) or current_turn is None or current_turn == my_name
-
-    if partner:
-        if my_turn:
-            st.success(f"🎯 あなたの番です（{my_name}）")
-        else:
-            st.info(f"⏳ {current_turn}さんの番です")
 
     st.markdown(
         _score_card_html(my_name, my_score, my_miss, active=(my_turn if partner else None)),
