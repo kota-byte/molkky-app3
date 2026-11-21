@@ -69,6 +69,11 @@ def init_db():
                      (identity TEXT PRIMARY KEY,
                       coords TEXT,
                       updated_at TIMESTAMPTZ DEFAULT now())'''))
+        s.execute(text('''CREATE TABLE IF NOT EXISTS player_scores
+                     (player_name TEXT PRIMARY KEY,
+                      score INTEGER,
+                      miss INTEGER,
+                      updated_at TIMESTAMPTZ DEFAULT now())'''))
         obstacle_cols = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw']
         for col in obstacle_cols:
             s.execute(text(f"ALTER TABLE throw_logs ADD COLUMN IF NOT EXISTS {col} INTEGER DEFAULT 0"))
@@ -1031,6 +1036,45 @@ def _reset_current_game():
     ps['my_miss_game'] = 0
     _mark_score_dirty()
 
+def _save_own_score_to_db(score, miss):
+    """自分の得点・連続ミスをDBに保存する。board_share_partnerで組んだ相手が
+    いれば、相手側の画面がこれを読みに行くことで自分の得点が相手にも映る"""
+    with db_conn.session as s:
+        s.execute(
+            text('''INSERT INTO player_scores (player_name, score, miss, updated_at)
+                    VALUES (:name, :score, :miss, now())
+                    ON CONFLICT (player_name) DO UPDATE SET score = :score, miss = :miss, updated_at = now()'''),
+            {"name": st.session_state.current_player, "score": score, "miss": miss}
+        )
+        s.commit()
+
+def _load_partner_score(partner_name):
+    """共有相手の得点・連続ミスをDBから読む。記録がまだ無ければNone"""
+    result = db_conn.query(
+        "SELECT score, miss FROM player_scores WHERE player_name = :name",
+        params={"name": partner_name}, ttl=0
+    )
+    if result.empty:
+        return None
+    return int(result.iloc[0]["score"]), int(result.iloc[0]["miss"])
+
+@st.fragment(run_every=5)
+def _show_partner_score():
+    """共有相手の得点を5秒おきに表示し直す。run_every内でst.rerun()を呼んで
+    いないため、このフラグメント自身の再描画だけで完結し、画面1の投擲記録
+    ボタンの処理中にアプリ全体を巻き込んで再実行してしまう心配がない
+    （カメラ配置のポーリングを画面1で止めている理由と同じ問題を避けるため）"""
+    partner = st.session_state.get('board_share_partner')
+    if not partner:
+        return
+    partner_data = _load_partner_score(partner)
+    if partner_data is None:
+        st.caption(f"🤝 {partner}：まだ得点記録なし")
+        return
+    p_score, p_miss = partner_data
+    st.metric(f"🤝 {partner}の得点", f"{p_score}点")
+    st.caption(f"{partner}の連続ミス：{p_miss}回")
+
 # --- 実験データ収集用の状態 ---
 def _default_experiment_state():
     return {
@@ -1392,6 +1436,7 @@ if st.session_state.get('score_dirty'):
         },
         storageKey=_score_storage_key(), key="score_save",
     )
+    _save_own_score_to_db(_ps_for_save['my_score_game'], _ps_for_save['my_miss_game'])
     st.session_state.score_dirty = False
 
 if "opponents" not in st.session_state:
@@ -1601,6 +1646,7 @@ elif page == "🎯 投擲データ記録":
     st.metric("自分の得点", f"{ps['my_score_game']}点")
     st.caption(f"連続ミス：{ps['my_miss_game']}回")
     st.caption(f"累計得点：{ps['my_total_score']}点")
+    _show_partner_score()
 
     if ps['game_message']:
         st.info(ps['game_message'])
