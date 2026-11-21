@@ -1062,9 +1062,11 @@ def _load_partner_score(partner_name):
         return None
     return int(result.iloc[0]["score"]), int(result.iloc[0]["miss"])
 
-def _score_card_html(name, score, miss, icon="👤", dashed=False, placeholder=False):
+def _score_card_html(name, score, miss, icon="👤", dashed=False, placeholder=False, active=None):
     """得点カードのHTML（ユーザー名／大きな得点／連続ミスを表す3つの丸）を組み立てる。
-    dashedは共有相手カードであることを示す破線枠、placeholderは相手未設定時の表示"""
+    dashedは共有相手カードであることを示す破線枠、placeholderは相手未設定時の表示。
+    activeは「今の番」強調用：Trueなら緑の太枠＋発光、Falseなら薄いグレー枠、
+    Noneなら番の概念自体が無い時（共有相手なし）のデフォルト枠"""
     circles = "".join(
         f'<span style="width:15px;height:15px;border-radius:50%;display:inline-block;'
         f'margin:0 3px;background:{"#FF6B35" if i < miss else "transparent"};'
@@ -1073,9 +1075,15 @@ def _score_card_html(name, score, miss, icon="👤", dashed=False, placeholder=F
     )
     score_display = "―" if placeholder else f"{score}"
     border_style = "dashed" if dashed else "solid"
+    if active is True:
+        border_width, border_color, shadow = "3px", "#22C55E", "box-shadow:0 0 12px rgba(34,197,94,.45);"
+    elif active is False:
+        border_width, border_color, shadow = "2px", "#e5d9c3", ""
+    else:
+        border_width, border_color, shadow = "2px", "#f1dcb8", ""
     return f'''
     <div style="text-align:center; padding:14px 10px; background:#FFFBF3;
-                border-radius:18px; border:2px {border_style} #f1dcb8;">
+                border-radius:18px; border:{border_width} {border_style} {border_color}; {shadow}">
         <div style="font-size:14px; font-weight:700; color:#9A8C7A; white-space:nowrap;
                     overflow:hidden; text-overflow:ellipsis;">{icon} {name}</div>
         <div style="font-family:'M PLUS Rounded 1c',sans-serif; font-size:50px; font-weight:800;
@@ -1084,23 +1092,6 @@ def _score_card_html(name, score, miss, icon="👤", dashed=False, placeholder=F
         <div style="margin-top:2px;">{circles}</div>
     </div>
     '''
-
-@st.fragment(run_every=5)
-def _render_partner_card():
-    """共有相手の得点カードを5秒おきに表示し直す。run_every内でst.rerun()を呼んで
-    いないため、このフラグメント自身の再描画だけで完結し、画面1の投擲記録
-    ボタンの処理中にアプリ全体を巻き込んで再実行してしまう心配がない
-    （カメラ配置のポーリングを画面1で止めている理由と同じ問題を避けるため）"""
-    partner = st.session_state.get('board_share_partner')
-    if not partner:
-        st.markdown(
-            _score_card_html("共有相手なし", 0, 0, icon="🔗", dashed=True, placeholder=True),
-            unsafe_allow_html=True,
-        )
-        return
-    partner_data = _load_partner_score(partner)
-    p_score, p_miss = partner_data if partner_data is not None else (0, 0)
-    st.markdown(_score_card_html(partner, p_score, p_miss, icon="🤝", dashed=True), unsafe_allow_html=True)
 
 def _turn_identity():
     """「今どちらの番か」を保存するキー。盤面共有・得点共有と同じ識別子を使う"""
@@ -1128,18 +1119,42 @@ def _set_current_turn(identity, player_name):
         s.commit()
 
 @st.fragment(run_every=5)
-def _render_turn_banner():
-    """共有相手がいる時だけ、今どちらの番かを5秒おきに表示し直す。
-    _render_partner_card()と同じ理由でst.rerun()は呼ばない"""
+def _render_score_section(my_name, my_score, my_miss):
+    """番バナー・自分の得点カード・共有相手の得点カードをまとめて5秒おきに
+    表示し直す。run_every内でst.rerun()を呼んでいないため、このフラグメント
+    自身の再描画だけで完結し、画面1の投擲記録ボタンの処理中にアプリ全体を
+    巻き込んで再実行してしまう心配がない（カメラ配置のポーリングを画面1で
+    止めている理由と同じ問題を避けるため）。自分のカードの枠は「今の番」に
+    応じて緑に強調／グレーに沈めるので、2枚のカードを同じタイミングで
+    更新する必要があり、1つのフラグメントにまとめている"""
     partner = st.session_state.get('board_share_partner')
+    current_turn = _load_current_turn(_turn_identity()) if partner else None
+    my_turn = (not partner) or current_turn is None or current_turn == my_name
+
+    if partner:
+        if my_turn:
+            st.success(f"🎯 あなたの番です（{my_name}）")
+        else:
+            st.info(f"⏳ {current_turn}さんの番です")
+
+    st.markdown(
+        _score_card_html(my_name, my_score, my_miss, active=(my_turn if partner else None)),
+        unsafe_allow_html=True,
+    )
+    st.write("")
+
     if not partner:
+        st.markdown(
+            _score_card_html("共有相手なし", 0, 0, icon="🔗", dashed=True, placeholder=True),
+            unsafe_allow_html=True,
+        )
         return
-    me = st.session_state.current_player
-    current_turn = _load_current_turn(_turn_identity())
-    if current_turn is None or current_turn == me:
-        st.success(f"🎯 あなたの番です（{me}）")
-    else:
-        st.info(f"⏳ {current_turn}さんの番です")
+    partner_data = _load_partner_score(partner)
+    p_score, p_miss = partner_data if partner_data is not None else (0, 0)
+    st.markdown(
+        _score_card_html(partner, p_score, p_miss, icon="🤝", dashed=True, active=not my_turn),
+        unsafe_allow_html=True,
+    )
 
 @st.fragment(run_every=5)
 def _opponent1_inputs(opp):
@@ -1757,16 +1772,8 @@ elif page == "🎯 投擲データ記録":
 
     ps = get_player_state()
 
-    # 今どちらの番か（共有相手がいる時だけ表示）
-    _render_turn_banner()
-
-    # 得点表示（自分／共有相手を縦に並べたカードで表示）
-    st.markdown(
-        _score_card_html(st.session_state.current_player, ps['my_score_game'], ps['my_miss_game']),
-        unsafe_allow_html=True,
-    )
-    st.write("")
-    _render_partner_card()
+    # 今どちらの番か（共有相手がいる時だけ表示）＋得点カード（自分／共有相手）
+    _render_score_section(st.session_state.current_player, ps['my_score_game'], ps['my_miss_game'])
 
     if ps['game_message']:
         st.info(ps['game_message'])
