@@ -1082,7 +1082,7 @@ def _score_card_html(name, score, miss, icon="👤", dashed=False, placeholder=F
     else:
         border_width, border_color, shadow = "2px", "#f1dcb8", ""
     return f'''
-    <div style="text-align:center; padding:14px 10px; background:#FFFBF3; margin-bottom:3px;
+    <div style="text-align:center; padding:14px 10px; background:#FFFBF3;
                 border-radius:18px; border:{border_width} {border_style} {border_color}; {shadow}">
         <div style="font-size:14px; font-weight:700; color:#9A8C7A; white-space:nowrap;
                     overflow:hidden; text-overflow:ellipsis;">{icon} {name}</div>
@@ -1142,6 +1142,7 @@ def _render_score_section(my_name, my_score, my_miss):
             _score_card_html("共有相手なし", 0, 0, icon="🔗", dashed=True, placeholder=True),
             unsafe_allow_html=True,
         )
+        st.write("")
         return
     partner_data = _load_partner_score(partner)
     p_score, p_miss = partner_data if partner_data is not None else (0, 0)
@@ -1149,6 +1150,7 @@ def _render_score_section(my_name, my_score, my_miss):
         _score_card_html(partner, p_score, p_miss, icon="🤝", dashed=True, active=not my_turn),
         unsafe_allow_html=True,
     )
+    st.write("")
 
 @st.fragment(run_every=5)
 def _opponent1_inputs(opp):
