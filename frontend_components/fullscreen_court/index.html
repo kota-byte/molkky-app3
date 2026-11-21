@@ -99,6 +99,22 @@ html,body{width:100%;height:100%;overflow:hidden;background:#f8fafc;touch-action
   background:rgba(59,130,246,.25);
 }
 
+/* ── 複数本が重なっている時の選択ポップアップ ── */
+#overlap-picker{
+  position:fixed;z-index:400;
+  transform:translate(-50%,-110%);
+  background:#1e293b;border-radius:10px;padding:6px;
+  display:none;gap:6px;
+  box-shadow:0 4px 14px rgba(0,0,0,.35);
+}
+#overlap-picker.visible{display:flex;}
+#overlap-picker .op-choice{
+  width:34px;height:34px;border-radius:8px;border:1.5px solid #475569;
+  background:rgba(255,255,255,.08);color:#fff;font-size:16px;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
+}
+#overlap-picker .op-choice:active{background:rgba(255,255,255,.2);}
+
 /* ── エッジタブ（右端中央） ── */
 #palette-tab{
   position:fixed;right:0;top:50%;transform:translateY(-50%);
@@ -261,6 +277,9 @@ html,body{width:100%;height:100%;overflow:hidden;background:#f8fafc;touch-action
 
 <!-- ドラッグ中の位置表示 -->
 <div id="drag-tooltip"></div>
+
+<!-- 重なっている本の選択ポップアップ（番号入れ替えモード用） -->
+<div id="overlap-picker"></div>
 
 <!-- エッジタブ -->
 <div id="palette-tab" onclick="togglePalette()">
@@ -518,9 +537,56 @@ function clearSwapSelection() {
 document.getElementById('swap-mode-btn').addEventListener('click', () => {
   swapMode = !swapMode;
   clearSwapSelection();
+  hideOverlapPicker();
   document.getElementById('swap-mode-btn').classList.toggle('active', swapMode);
   document.getElementById('swap-hint').classList.toggle('visible', swapMode);
 });
+
+// 近接していて重なって見える本（タップ座標から一定距離以内）を、
+// 画面上の位置が近い順に並べて返す。暗所でカメラが番号を誤認しやすい
+// 状況ほどスキットル同士が密集しがちなので、「どれをタップしたことにするか」を
+// DOMの重なり順（一番最後に作られたピンが最前面）に任せきりにせず、
+// 複数本が候補に挙がる時はユーザー自身に選んでもらう
+function nearbyPinsAt(cx, cy) {
+  const OVERLAP_PX = 14 * zoomScale;
+  const found = [];
+  for (let n = 1; n <= 12; n++) {
+    if (!coords[n]) continue;
+    const sv = mToSvg(coords[n].x, coords[n].y);
+    const sc = svgPtToScreen(sv.x, sv.y);
+    const d = Math.hypot(sc.x - cx, sc.y - cy);
+    if (d <= OVERLAP_PX) found.push({n, d});
+  }
+  found.sort((a, b) => a.d - b.d);
+  return found.map(f => f.n);
+}
+
+const overlapPicker = document.getElementById('overlap-picker');
+function hideOverlapPicker() {
+  overlapPicker.classList.remove('visible');
+  overlapPicker.innerHTML = '';
+}
+function showOverlapPicker(cx, cy, nList) {
+  overlapPicker.innerHTML = '';
+  nList.forEach(n => {
+    const btn = document.createElement('div');
+    btn.className = 'op-choice';
+    btn.textContent = EMOJI[n];
+    const choose = ev => { ev.preventDefault(); ev.stopPropagation(); hideOverlapPicker(); handlePinTap(n); };
+    btn.addEventListener('mousedown', choose);
+    btn.addEventListener('touchstart', choose, {passive: false});
+    overlapPicker.appendChild(btn);
+  });
+  overlapPicker.style.left = cx + 'px';
+  overlapPicker.style.top = cy + 'px';
+  overlapPicker.classList.add('visible');
+}
+document.addEventListener('mousedown', e => {
+  if (overlapPicker.classList.contains('visible') && !overlapPicker.contains(e.target)) hideOverlapPicker();
+});
+document.addEventListener('touchstart', e => {
+  if (overlapPicker.classList.contains('visible') && !overlapPicker.contains(e.target)) hideOverlapPicker();
+}, {passive: true});
 
 // trueを返したら「タップとして処理済み」＝呼び出し元はドラッグを開始しない
 function handlePinTap(n) {
@@ -598,14 +664,22 @@ function beginDragFromCourt(n, cx, cy) {
 function onCourtTouchStart(e) {
   e.preventDefault();
   const n = +this.dataset.n;
-  if (handlePinTap(n)) return;
   const t = e.touches[0];
+  if (swapMode) {
+    const nearby = nearbyPinsAt(t.clientX, t.clientY);
+    if (nearby.length > 1) { showOverlapPicker(t.clientX, t.clientY, nearby); return; }
+    if (handlePinTap(n)) return;
+  }
   beginDragFromCourt(n, t.clientX, t.clientY);
 }
 function onCourtMouseDown(e) {
   e.preventDefault();
   const n = +this.dataset.n;
-  if (handlePinTap(n)) return;
+  if (swapMode) {
+    const nearby = nearbyPinsAt(e.clientX, e.clientY);
+    if (nearby.length > 1) { showOverlapPicker(e.clientX, e.clientY, nearby); return; }
+    if (handlePinTap(n)) return;
+  }
   beginDragFromCourt(n, e.clientX, e.clientY);
 }
 
