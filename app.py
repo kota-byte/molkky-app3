@@ -1075,6 +1075,54 @@ def _show_partner_score():
     st.metric(f"🤝 {partner}の得点", f"{p_score}点")
     st.caption(f"{partner}の連続ミス：{p_miss}回")
 
+@st.fragment(run_every=5)
+def _opponent1_inputs(opp):
+    """シミュレーター画面の「相手1」の得点・連続ミス入力。board_share_partnerで
+    組んだ相手がいれば、相手が自分の端末で記録した最新の得点を5秒おきに取り込んで
+    スライダー/ラジオボタンの値に反映する。「前回自動反映した値」を覚えておき、
+    それと変わっていない間は上書きしない＝ユーザーが手動で値を変えても、相手が
+    次に新しく記録するまではその手動の値のまま。_show_partner_score()と同じ理由で
+    st.rerun()は呼ばず、このフラグメント自身の再描画だけで完結させている"""
+    partner = st.session_state.get('board_share_partner')
+    if partner and partner != st.session_state.get('_opp1_synced_partner'):
+        # 共有相手を切り替えた直後は、前の相手から自動反映した値を引きずらない
+        # よう、同期済みマーカーを一旦クリアしてから新しい相手の値で取り直す
+        st.session_state['_opp1_synced_partner'] = partner
+        st.session_state['_opp1_synced_score'] = None
+        st.session_state['_opp1_synced_miss'] = None
+    if partner:
+        partner_data = _load_partner_score(partner)
+        p_score, p_miss = partner_data if partner_data is not None else (0, 0)
+        if st.session_state.get('_opp1_synced_score') != p_score:
+            st.session_state['opp_score_0'] = p_score
+            st.session_state['_opp1_synced_score'] = p_score
+        if st.session_state.get('_opp1_synced_miss') != p_miss:
+            st.session_state['opp_miss_0'] = p_miss
+            st.session_state['_opp1_synced_miss'] = p_miss
+
+    st.write("**相手1**" + (f"（🤝 {partner} と自動連携中）" if partner else ""))
+    col1, col2, col3 = st.columns([2, 2, 1])
+    with col1:
+        st.session_state.opponents[0]["score"] = st.slider(
+            "相手1の得点", 0, 50, opp["score"], key="opp_score_0")
+        if st.session_state.experiment["recording"]:
+            exp = st.session_state.experiment
+            new_opp_score = st.session_state.opponents[0]["score"]
+            if new_opp_score == 25 and exp["opp_score_prev"] > 25:
+                exp["opp_bounce_count"] += 1
+            exp["opp_score_prev"] = new_opp_score
+    with col2:
+        st.session_state.opponents[0]["miss"] = st.radio(
+            "相手1の連続ミス回数", [0, 1, 2], horizontal=True,
+            index=opp["miss"], key="opp_miss_0")
+    with col3:
+        st.write("")
+        st.write("")
+        if len(st.session_state.opponents) > 1:
+            if st.button("－", key="del_opp_0"):
+                st.session_state.opponents.pop(0)
+                st.rerun()
+
 # --- 実験データ収集用の状態 ---
 def _default_experiment_state():
     return {
@@ -1986,19 +2034,17 @@ elif page == "🤖 AI戦術提示シミュレーター":
 
         st.write("---")
 
-        # 相手のスコア入力（動的に増減）
+        # 相手のスコア入力（動的に増減）。相手1だけは共有相手の実際の記録と
+        # 自動連携できるので、専用のフラグメント（_opponent1_inputs）に任せる
         for i, opp in enumerate(st.session_state.opponents):
+            if i == 0:
+                _opponent1_inputs(opp)
+                continue
             st.write(f"**相手{i+1}**")
             col1, col2, col3 = st.columns([2, 2, 1])
             with col1:
                 st.session_state.opponents[i]["score"] = st.slider(
                     f"相手{i+1}の得点", 0, 50, opp["score"], key=f"opp_score_{i}")
-                if i == 0 and st.session_state.experiment["recording"]:
-                    exp = st.session_state.experiment
-                    new_opp_score = st.session_state.opponents[0]["score"]
-                    if new_opp_score == 25 and exp["opp_score_prev"] > 25:
-                        exp["opp_bounce_count"] += 1
-                    exp["opp_score_prev"] = new_opp_score
             with col2:
                 st.session_state.opponents[i]["miss"] = st.radio(
                     f"相手{i+1}の連続ミス回数", [0, 1, 2], horizontal=True,
@@ -2341,5 +2387,8 @@ if st.button("ログアウト", use_container_width=True):
     st.session_state.current_player = None
     st.session_state.player_saved_to_storage = False
     st.session_state.score_restore_checked = False
+    # board_share_partnerを消して、次にログインするプレイヤーの分をDBから
+    # 読み直させる（消さないと前のプレイヤーの共有相手設定を引きずってしまう）
+    st.session_state.pop('board_share_partner', None)
     _reset_experiment_session()
     st.rerun()
