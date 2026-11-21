@@ -1744,10 +1744,21 @@ elif page == "🎯 投擲データ記録":
             font-weight: 800 !important;
         }
         .st-key-reset_btn_row div.stButton > button {
-            width: auto !important;
+            width: 100% !important;
             height: 34px !important;
             padding: 0 16px !important;
             font-size: 12px !important;
+        }
+        .st-key-reset_btn_row div[data-testid="stHorizontalBlock"] {
+            display: flex !important;
+            flex-direction: row !important;
+            flex-wrap: nowrap !important;
+            gap: 10px !important;
+        }
+        .st-key-reset_btn_row div[data-testid="stHorizontalBlock"] > div {
+            flex: 1 1 50% !important;
+            max-width: 50% !important;
+            min-width: 0px !important;
         }
         .st-key-obstacle_grid div[data-testid="stHorizontalBlock"] {
             display: flex !important;
