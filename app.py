@@ -1082,7 +1082,7 @@ def _score_card_html(name, score, miss, icon="👤", dashed=False, placeholder=F
     else:
         border_width, border_color, shadow = "2px", "#f1dcb8", ""
     return f'''
-    <div style="text-align:center; padding:14px 10px; background:#FFFBF3;
+    <div style="text-align:center; padding:14px 10px; background:#FFFDF9;
                 border-radius:18px; border:{border_width} {border_style} {border_color}; {shadow}">
         <div style="font-size:14px; font-weight:700; color:#9A8C7A; white-space:nowrap;
                     overflow:hidden; text-overflow:ellipsis;">{icon} {name}</div>
