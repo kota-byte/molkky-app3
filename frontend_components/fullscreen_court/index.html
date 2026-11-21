@@ -77,6 +77,27 @@ html,body{width:100%;height:100%;overflow:hidden;background:#f8fafc;touch-action
   background:#ef4444;color:#fff;font-size:13px;font-weight:600;cursor:pointer;
 }
 #exit-btn:active{background:#dc2626;}
+#swap-mode-btn{
+  height:34px;padding:0 14px;border:none;border-radius:7px;
+  background:#e2e8f0;color:#334155;font-size:13px;font-weight:600;cursor:pointer;
+}
+#swap-mode-btn.active{background:#3b82f6;color:#fff;}
+
+/* ── 番号入れ替えモードのヒント帯 ── */
+#swap-hint{
+  position:fixed;top:48px;left:0;right:0;z-index:290;
+  padding:7px 12px;text-align:center;
+  font-size:13px;font-weight:600;color:#1e40af;
+  background:rgba(191,219,254,.95);border-bottom:1px solid #93c5fd;
+  display:none;
+}
+#swap-hint.visible{display:block;}
+
+/* ── 入れ替えモードで選択中のピン ── */
+.court-pin.swap-selected{
+  outline:3px solid #3b82f6;border-radius:50%;
+  background:rgba(59,130,246,.25);
+}
 
 /* ── エッジタブ（右端中央） ── */
 #palette-tab{
@@ -180,8 +201,10 @@ html,body{width:100%;height:100%;overflow:hidden;background:#f8fafc;touch-action
 <!-- 上部バー -->
 <div id="top-bar">
   <span id="pin-count">0 / 12 本配置</span>
+  <button id="swap-mode-btn">🔀 番号入れ替え</button>
   <button id="exit-btn">✕ 保存して終了</button>
 </div>
+<div id="swap-hint">入れ替えたい2本のスキットルを順にタップしてください</div>
 
 <!-- ズームコントロール -->
 <div id="zoom-controls">
@@ -479,6 +502,44 @@ document.addEventListener('mousemove', e => { if (panDrag) movePan(e.clientX, e.
 document.addEventListener('touchend', e => { if (e.touches.length === 0) panDrag = null; });
 document.addEventListener('mouseup', () => { panDrag = null; courtSvg.style.cursor = 'grab'; });
 
+// ── 番号入れ替えモード ──
+// カメラの誤検知で位置は合っているが番号だけ間違っている時に使う。
+// 通常はピンをmousedown/touchstartした瞬間にドラッグが始まるが、このモードが
+// オンの間は代わりにタップでの2本選択を受け付け、選んだ2本のcoordsを
+// そのまま入れ替える（＝物理的な位置はそのまま、番号の割り当てだけ交換）
+let swapMode = false;
+let swapSelected = null;
+
+function clearSwapSelection() {
+  if (swapSelected && pinEls[swapSelected]) pinEls[swapSelected].classList.remove('swap-selected');
+  swapSelected = null;
+}
+
+document.getElementById('swap-mode-btn').addEventListener('click', () => {
+  swapMode = !swapMode;
+  clearSwapSelection();
+  document.getElementById('swap-mode-btn').classList.toggle('active', swapMode);
+  document.getElementById('swap-hint').classList.toggle('visible', swapMode);
+});
+
+// trueを返したら「タップとして処理済み」＝呼び出し元はドラッグを開始しない
+function handlePinTap(n) {
+  if (!swapMode) return false;
+  if (swapSelected === null) {
+    swapSelected = n;
+    pinEls[n].classList.add('swap-selected');
+  } else if (swapSelected === n) {
+    clearSwapSelection();
+  } else {
+    const n2 = swapSelected;
+    const tmp = coords[n]; coords[n] = coords[n2]; coords[n2] = tmp;
+    positionCourtPin(n);
+    positionCourtPin(n2);
+    clearSwapSelection();
+  }
+  return true;
+}
+
 let drag = null;
 const dragTooltip = document.getElementById('drag-tooltip');
 
@@ -536,12 +597,16 @@ function beginDragFromCourt(n, cx, cy) {
 
 function onCourtTouchStart(e) {
   e.preventDefault();
+  const n = +this.dataset.n;
+  if (handlePinTap(n)) return;
   const t = e.touches[0];
-  beginDragFromCourt(+this.dataset.n, t.clientX, t.clientY);
+  beginDragFromCourt(n, t.clientX, t.clientY);
 }
 function onCourtMouseDown(e) {
   e.preventDefault();
-  beginDragFromCourt(+this.dataset.n, e.clientX, e.clientY);
+  const n = +this.dataset.n;
+  if (handlePinTap(n)) return;
+  beginDragFromCourt(n, e.clientX, e.clientY);
 }
 
 function onMove(cx, cy) {
