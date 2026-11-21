@@ -899,7 +899,7 @@ if st.session_state.current_player is None:
             font-weight: 700 !important;
             font-size: 16px !important;
             padding: 0.6rem 0.5rem !important;
-            border: 2px solid #FF6B35 !important;
+            border: none !important;
             color: #FF6B35 !important;
             background: #FFFFFF !important;
             transition: transform .08s ease, box-shadow .08s ease;
@@ -915,7 +915,7 @@ if st.session_state.current_player is None:
         div.stButton > button[kind="primary"] {
             background: #FF6B35 !important;
             color: #FFFFFF !important;
-            border: 2px solid #FF6B35 !important;
+            border: none !important;
         }
         div.stButton > button[kind="primary"]:hover {
             background: #FF8156 !important;
@@ -1578,7 +1578,7 @@ def render_theme_css():
         div.stButton > button {
             border-radius: 14px !important;
             font-weight: 700 !important;
-            border: 2px solid #FF6B35 !important;
+            border: none !important;
             color: #FF6B35 !important;
             background: #FFFFFF !important;
             transition: transform .08s ease, box-shadow .08s ease;
@@ -1594,7 +1594,7 @@ def render_theme_css():
         div.stButton > button[kind="primary"] {
             background: #FF6B35 !important;
             color: #FFFFFF !important;
-            border: 2px solid #FF6B35 !important;
+            border: none !important;
         }
         div.stButton > button[kind="primary"]:hover {
             background: #FF8156 !important;
