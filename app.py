@@ -1714,15 +1714,13 @@ elif page == "🎯 投擲データ記録":
 
     ps = get_player_state()
 
-    # 得点表示（自分／共有相手を横並びのカードで表示）
-    col_me, col_partner = st.columns(2)
-    with col_me:
-        st.markdown(
-            _score_card_html(st.session_state.current_player, ps['my_score_game'], ps['my_miss_game']),
-            unsafe_allow_html=True,
-        )
-    with col_partner:
-        _render_partner_card()
+    # 得点表示（自分／共有相手を縦に並べたカードで表示）
+    st.markdown(
+        _score_card_html(st.session_state.current_player, ps['my_score_game'], ps['my_miss_game']),
+        unsafe_allow_html=True,
+    )
+    st.write("")
+    _render_partner_card()
     st.caption(f"累計得点：{ps['my_total_score']}点")
 
     if ps['game_message']:
