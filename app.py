@@ -863,7 +863,7 @@ if st.session_state.current_player is None:
         }
         div[data-testid="stSelectbox"] div[role="group"] {
             background-color: #FFFFFF !important;
-            border: 2px solid #FF6B35 !important;
+            border: 2px solid #8C6239 !important;
             border-radius: 12px !important;
         }
         div[data-testid="stSelectbox"] input {
@@ -875,7 +875,7 @@ if st.session_state.current_player is None:
         }
         [role="listbox"] {
             background-color: #FFFFFF !important;
-            border: 2px solid #FF6B35 !important;
+            border: 2px solid #8C6239 !important;
         }
         [role="option"] {
             background-color: #FFFFFF !important;
@@ -1607,7 +1607,7 @@ def render_theme_css():
         }
         div[data-testid="stSelectbox"] div[role="group"] {
             background-color: #FFFFFF !important;
-            border: 2px solid #FF6B35 !important;
+            border: 2px solid #8C6239 !important;
             border-radius: 12px !important;
         }
         div[data-testid="stSelectbox"] input {
@@ -1619,7 +1619,7 @@ def render_theme_css():
         }
         [role="listbox"] {
             background-color: #FFFFFF !important;
-            border: 2px solid #FF6B35 !important;
+            border: 2px solid #8C6239 !important;
         }
         [role="option"] {
             background-color: #FFFFFF !important;
