@@ -1538,17 +1538,21 @@ def _poll_skittle_layout_from_camera():
             "条件": _exp["condition"],
             "スキットル配置": _coords_json(_new_coords),
         })
+    if page == "🎯 投擲データ記録":
+        # 投擲データ記録画面では、記録ボタンの処理中にst.rerun()（アプリ全体の
+        # 再実行）が割り込むと同じ投擲が二重に記録される実害があったため、
+        # この画面でだけはst.rerun()を呼ばない。session_stateの更新（配置の
+        # 反映・スプレッドシートへの自動記録）はここまでで既に終わっているので、
+        # ユーザー自身の次の操作（狙う番号の変更や記録保存など）による通常の
+        # rerunで自然に画面へ反映される
+        return
     # canvas_versionを進めてcanvas_keyを変える。これをしないと画面2のst_canvasが
     # 古いキーのまま＝古い内部状態を表示し続けてしまう（書き戻し自体は
     # skittle_layout_last_seenで別途無効化しているので、ここは表示の更新のため）
     st.session_state['canvas_version'] = st.session_state.get('canvas_version', 0) + 1
     st.rerun()
 
-if page != "🎯 投擲データ記録":
-    # 投擲データ記録画面では盤面の自動更新は不要な上、記録ボタンを押した
-    # 処理の途中でこのポーリングのst.rerun()が割り込むと、同じ投擲が
-    # スプレッドシートに二重に記録されるおそれがあるため、この画面では止める
-    _poll_skittle_layout_from_camera()
+_poll_skittle_layout_from_camera()
 
 if st.session_state.get('score_dirty'):
     _ps_for_save = get_player_state()
