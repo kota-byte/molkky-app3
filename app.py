@@ -549,6 +549,18 @@ def get_success_rate(dist, obstacle_flags, df, close_count=0, near_count=0, pers
 
     return base
 
+def _non_bust_candidates(score, candidates):
+    """実際の試合では、安全な（当てても50点を超えない）的がある限り、わざわざ
+    バーストする的を自分から狙う選手はいない（バーストは「狙った的を外して
+    別の的に当たってしまった」時に意図せず起きるものであり、狙って起こす
+    ものではない）。この前提をシミュレーション内の的選び（自分・相手の
+    その後の手、トップ画面の推薦候補のどちらも）に反映するため、安全な
+    候補が1本でもあればバースト確定の候補を検討対象から除外する。
+    安全な的が1本も残っていない（どれを狙っても必ずバーストする）場合だけは
+    選択の余地がないので、全候補をそのまま返す"""
+    candidates = list(candidates)
+    safe = [n for n in candidates if score + n <= 50]
+    return safe if safe else candidates
 
 def run_simulation(
     my_score, my_miss, opponents,
@@ -627,7 +639,7 @@ def run_simulation(
 
         def closeness_of(n):
             return abs(score + n - 50) if score + n <= 50 else abs(score + n - 25 - 50)
-        shortlist = sorted(active_now, key=closeness_of)[:shortlist_size]
+        shortlist = sorted(_non_bust_candidates(score, active_now), key=closeness_of)[:shortlist_size]
 
         if depth <= 0:
             best = -1.0
@@ -680,7 +692,7 @@ def run_simulation(
         戻り値は (選んだ番号, その成功率)"""
         def closeness_of(n):
             return abs(score + n - 50) if score + n <= 50 else abs(score + n - 25 - 50)
-        shortlist = sorted(active_now, key=closeness_of)[:shortlist_size]
+        shortlist = sorted(_non_bust_candidates(score, active_now), key=closeness_of)[:shortlist_size]
         # 外した場合の評価値はどの候補を選んでも同じ（スコア・盤面が
         # 変わらないため）なので、候補ループの外で1回だけ計算する
         if miss_count >= 2:
@@ -711,7 +723,11 @@ def run_simulation(
 
     results = {}
 
-    for target_num in base_active:
+    # 安全な（当てても50点を超えない）的が1本でもあれば、バースト確定の的は
+    # そもそも推薦候補にしない（_non_bust_candidatesの説明の通り、実際の
+    # 試合でわざわざ狙う選手はいないため）。全部バーストする状況だけは
+    # 選択の余地がないので、全部を候補に残す
+    for target_num in _non_bust_candidates(my_score, base_active.keys()):
         win_count = 0
 
         for _ in range(n_sim):
