@@ -667,7 +667,15 @@ function onCourtTouchStart(e) {
   const t = e.touches[0];
   if (swapMode) {
     const nearby = nearbyPinsAt(t.clientX, t.clientY);
-    if (nearby.length > 1) { showOverlapPicker(t.clientX, t.clientY, nearby); return; }
+    if (nearby.length > 1) {
+      // showOverlapPicker()が表示した直後、このtouchstartがdocumentまで
+      // バブリングすると「ピッカーの外側をタップしたら閉じる」ハンドラが
+      // 同一イベント内で即座に閉じてしまう（0.1m隣接など、2本以上が
+      // 近接している時に毎回ピッカーが一瞬で消えて選べなくなるバグの原因）
+      e.stopPropagation();
+      showOverlapPicker(t.clientX, t.clientY, nearby);
+      return;
+    }
     if (handlePinTap(n)) return;
   }
   beginDragFromCourt(n, t.clientX, t.clientY);
@@ -677,7 +685,11 @@ function onCourtMouseDown(e) {
   const n = +this.dataset.n;
   if (swapMode) {
     const nearby = nearbyPinsAt(e.clientX, e.clientY);
-    if (nearby.length > 1) { showOverlapPicker(e.clientX, e.clientY, nearby); return; }
+    if (nearby.length > 1) {
+      e.stopPropagation();
+      showOverlapPicker(e.clientX, e.clientY, nearby);
+      return;
+    }
     if (handlePinTap(n)) return;
   }
   beginDragFromCourt(n, e.clientX, e.clientY);
