@@ -1536,10 +1536,13 @@ if st.session_state.get('skittle_layout_dirty'):
 @st.fragment(run_every=5)
 def _poll_skittle_layout_from_camera():
     """カメラ側（live計測システム）が盤面を更新していないか5秒おきに確認する。
-    更新日時が前回見た値と変わっていたら、盤面全体を読み込み直して画面に反映する
-    （カメラ側が投擲モード→静止モードに切り替わるたびにDBへ書き込む想定）。
-    問い合わせ自体はDBへのネットワーク通信なので、間隔を詰めすぎると、その往復に
-    かかる時間だけ操作の反応が一瞬止まる（カクつく）。間隔を空けて頻度を下げている"""
+    更新日時が前回見た値と変わっていたら読み込み直すが、アプリが実際に使う
+    skittle_m_coordsにはまだ反映しない。ここで即座に反映すると、投げてから
+    「記録を保存する」を押すまでの間に新しい配置が割り込み、今まさに記録しよう
+    としている投擲（投げる前の盤面を前提にした障害物判定など）に途中から
+    投げた後の配置が混ざってしまう。そのため一旦pending_camera_coordsに
+    保留しておき、実際にskittle_m_coordsへ反映する（＝盤面が次の状態へ進む）
+    のは、投擲データ記録画面の「記録を保存する」ボタンが押された瞬間に限定する"""
     _coords, _updated_at = _load_skittle_layout_from_db(_skittle_identity())
     if _updated_at is None or _updated_at == st.session_state.get('skittle_layout_last_seen'):
         return
@@ -1549,12 +1552,13 @@ def _poll_skittle_layout_from_camera():
         _n = item.get("n")
         if _n and 1 <= _n <= 12:
             _new_coords[_n] = (item["x"], item["y"])
-    st.session_state.skittle_m_coords = _new_coords
-    st.session_state.last_target_no_for_autofill = None
+    st.session_state.pending_camera_coords = _new_coords
     # 記録中（評価実験で試合をスタートしている間）だけ、カメラが送ってきた
     # この配置をスプレッドシートにも自動で残す（「📍 配置を記録する」ボタンを
     # 手動で押す代わり）。この関数は冒頭のupdated_atチェックで同じ更新を
-    # 2回処理しないようになっているので、ここでの二重記録は起きない
+    # 2回処理しないようになっているので、ここでの二重記録は起きない。
+    # これはアプリの表示状態（skittle_m_coords）とは別枠の記録なので、
+    # pending化の影響は受けず今まで通り検知のたびに記録する
     _exp = st.session_state.get('experiment')
     if _exp and _exp.get('recording'):
         append_skittle_snapshot({
@@ -1564,19 +1568,6 @@ def _poll_skittle_layout_from_camera():
             "条件": _exp["condition"],
             "スキットル配置": _coords_json(_new_coords),
         })
-    if page == "🎯 投擲データ記録":
-        # 投擲データ記録画面では、記録ボタンの処理中にst.rerun()（アプリ全体の
-        # 再実行）が割り込むと同じ投擲が二重に記録される実害があったため、
-        # この画面でだけはst.rerun()を呼ばない。session_stateの更新（配置の
-        # 反映・スプレッドシートへの自動記録）はここまでで既に終わっているので、
-        # ユーザー自身の次の操作（狙う番号の変更や記録保存など）による通常の
-        # rerunで自然に画面へ反映される
-        return
-    # canvas_versionを進めてcanvas_keyを変える。これをしないと画面2のst_canvasが
-    # 古いキーのまま＝古い内部状態を表示し続けてしまう（書き戻し自体は
-    # skittle_layout_last_seenで別途無効化しているので、ここは表示の更新のため）
-    st.session_state['canvas_version'] = st.session_state.get('canvas_version', 0) + 1
-    st.rerun()
 
 _poll_skittle_layout_from_camera()
 
@@ -1998,6 +1989,17 @@ elif page == "🎯 投擲データ記録":
                           }).scalar()
                 s.commit()
             st.session_state['last_throw_undo']['throw_log_id'] = _inserted_id
+
+        # この投擲の判定（障害物配置など）はここまで投げる前の盤面を前提に
+        # 使ってきたので、カメラが検知した新しい配置（pending_camera_coords）は
+        # ここで初めて確定反映する。これで盤面は「この投擲が終わった後」の
+        # 状態に進み、以降の画面（AI戦術提示シミュレーター含む）はこの新しい
+        # 配置を見ることになる
+        if st.session_state.get('pending_camera_coords') is not None:
+            st.session_state.skittle_m_coords = st.session_state.pending_camera_coords
+            st.session_state.pending_camera_coords = None
+            st.session_state.last_target_no_for_autofill = None
+            st.session_state['canvas_version'] = st.session_state.get('canvas_version', 0) + 1
 
         # 実験ログ：記録中（評価実験画面でスタートした状態）のみ、AIシミュレーター画面で
         # 記録した投擲前スナップショットと今回の結果を合体してSheetsに追記する
