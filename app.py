@@ -621,7 +621,7 @@ def run_simulation(
         rate_key_cache.clear()
         greedy_memo.clear()
 
-    def _greedy_value(score, active_now, coords_dict, shortlist_size=8, personalize=True, depth=1):
+    def _greedy_value(score, active_now, active_tuple, coords_dict, shortlist_size=8, personalize=True, depth=1):
         """局面の良さの見積もり。depth段階先読みする。depth<=0の時は「近さ×
         成功率」だけの簡易値（従来の計算）。depth>=1の時は、候補ごとに
         「成功した場合」「外した場合」の次局面をdepth-1段で評価し、成功率で
@@ -629,10 +629,15 @@ def run_simulation(
         内部評価にも適用したもの）。
         簡易値だけだと、的を当てた後の残り点数が小さいほど高く評価されて
         しまい、その後に続けやすいかを無視してしまう（実際にはフル
-        シミュレーションの真の勝率と逆転するケースがあった）ための修正"""
+        シミュレーションの真の勝率と逆転するケースがあった）ための修正。
+        active_tupleは呼び出し元（pick_target）が1回だけソートした
+        tuple(sorted(active_now))。1手先読みの再帰中はactive_now自体が
+        変わらない（倒れた的は移動するだけで盤から消えないため）のに、
+        再帰のたびにここでソートし直すと無駄が大きい（プロファイルで
+        全体の1割前後を占めていた）ため、呼び出し元から渡してもらう"""
         if not active_now:
             return 0.0
-        memo_key = (score, tuple(sorted(active_now)), shortlist_size, personalize, depth)
+        memo_key = (score, active_tuple, shortlist_size, personalize, depth)
         cached = greedy_memo.get(memo_key)
         if cached is not None:
             return cached
@@ -650,7 +655,7 @@ def run_simulation(
             greedy_memo[memo_key] = best
             return best
 
-        value_miss = _greedy_value(score, active_now, coords_dict, shortlist_size, personalize, depth - 1)
+        value_miss = _greedy_value(score, active_now, active_tuple, coords_dict, shortlist_size, personalize, depth - 1)
         best = -1.0
         for n in shortlist:
             rate = get_rate_for(n, coords_dict, personalize)
@@ -669,7 +674,7 @@ def run_simulation(
                 # 候補からnを除外しない（除外すると「nを当てた直後にまた
                 # ちょうどnを当てれば勝てる」局面を正しく評価できなくなる。
                 # 実際にこれが原因で的の優劣を取り違えるケースがあった）
-                value_success = _greedy_value(new_score, active_now, coords_dict, shortlist_size, personalize, depth - 1)
+                value_success = _greedy_value(new_score, active_now, active_tuple, coords_dict, shortlist_size, personalize, depth - 1)
             ev = rate * value_success + (1 - rate) * value_miss
             if ev > best:
                 best = ev
@@ -690,6 +695,11 @@ def run_simulation(
         の時は、外した場合の価値を「ゲームが続く前提」の_greedy_valueでは
         なく確実な負け(0)として評価する（それ以外の時は従来通り）。
         戻り値は (選んだ番号, その成功率)"""
+        # active_now（盤上にある的の番号）はこの呼び出し・再帰全体を通して
+        # 変わらないので、ソート済みタプルを1回だけ作って_greedy_valueに渡す
+        # （_greedy_value内で毎回ソートし直すのを避けるため）
+        active_tuple = tuple(sorted(active_now))
+
         def closeness_of(n):
             return abs(score + n - 50) if score + n <= 50 else abs(score + n - 25 - 50)
         shortlist = sorted(_non_bust_candidates(score, active_now), key=closeness_of)[:shortlist_size]
@@ -698,7 +708,7 @@ def run_simulation(
         if miss_count >= 2:
             value_miss = 0.0
         else:
-            value_miss = _greedy_value(score, active_now, coords_dict, shortlist_size, personalize)
+            value_miss = _greedy_value(score, active_now, active_tuple, coords_dict, shortlist_size, personalize)
 
         best_n = None
         best_ev = -1.0
@@ -713,7 +723,7 @@ def run_simulation(
                     new_score = 25
                 # nを当てても的は消えず移動するだけなので、次局面の候補から
                 # nを除外しない（_greedy_value内と同じ理由）
-                value_success = _greedy_value(new_score, active_now, coords_dict, shortlist_size, personalize)
+                value_success = _greedy_value(new_score, active_now, active_tuple, coords_dict, shortlist_size, personalize)
             ev = rate * value_success + (1 - rate) * value_miss
             if ev > best_ev:
                 best_ev = ev
