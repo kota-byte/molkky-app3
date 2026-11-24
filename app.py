@@ -621,7 +621,7 @@ def run_simulation(
         rate_key_cache.clear()
         greedy_memo.clear()
 
-    def _greedy_value(score, active_now, coords_dict, shortlist_size=4, personalize=True, depth=1):
+    def _greedy_value(score, active_now, coords_dict, shortlist_size=8, personalize=True, depth=1):
         """局面の良さの見積もり。depth段階先読みする。depth<=0の時は「近さ×
         成功率」だけの簡易値（従来の計算）。depth>=1の時は、候補ごとに
         「成功した場合」「外した場合」の次局面をdepth-1段で評価し、成功率で
@@ -676,7 +676,7 @@ def run_simulation(
         greedy_memo[memo_key] = best
         return best
 
-    def pick_target(score, active_now, coords_dict, shortlist_size=4, personalize=True, miss_count=0):
+    def pick_target(score, active_now, coords_dict, shortlist_size=8, personalize=True, miss_count=0):
         """1手先読みで番号を選ぶ。候補ごとに「成功した場合」「外した場合」
         それぞれの次局面のだいたいの良さ（_greedy_value、先読み無し）を
         見積もり、成功率で重み付けした期待値が一番高い候補を選ぶ。
@@ -2377,9 +2377,9 @@ elif page == "🤖 AI戦術提示シミュレーター":
         _no_app_mode = exp_recording and exp_condition != "アプリあり"
 
         _SIM_SPEED_OPTIONS = {
-            "速い（7〜11秒）": 300,
-            "標準（20〜26秒）": 800,
-            "精密（40〜59秒）": 2000,
+            "速い（9〜17秒）": 300,
+            "標準（26〜39秒）": 800,
+            "精密（52〜89秒）": 2000,
         }
         if not _no_app_mode:
             _sim_speed_label = st.radio(
