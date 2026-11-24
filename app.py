@@ -490,7 +490,7 @@ def _obstacle_near_mask(df, obstacle_flags):
             mask &= (df[d] == 0)
     return mask
 
-def get_success_rate(dist, obstacle_flags, df, close_count=0, near_count=0, personalize=True):
+def get_success_rate(dist, obstacle_flags, df, close_count=0, near_count=0, personalize=True, dir_count=None):
     """ベース値（距離別）に過去データの実測値を重み付けして混ぜる。
     一致するデータが見つかるまで、以下の順でマッチング条件を緩める：
     1. 距離完全一致 ＋ 障害物パターン完全一致
@@ -509,7 +509,13 @@ def get_success_rate(dist, obstacle_flags, df, close_count=0, near_count=0, pers
     personalize=Falseの場合、過去データとのブレンドを一切せず、距離と
     密集度だけで決まる素の値を返す（対戦相手の強さがログイン中の
     プレイヤー自身の癖に引きずられないようにするため、シミュレーション
-    内で相手の番を評価する時に使う）"""
+    内で相手の番を評価する時に使う）。
+    dir_countはdf[DIRS].sum(axis=1)を呼び出し元が1回だけ計算した結果
+    （行ごとの密着方位数）。この値はdf自体が変わらない限りどのdist・
+    obstacle_flagsで呼んでも同じなのに、毎回ここで計算し直すと
+    （pandasのaxis=1方向の合計は遅い）シミュレーション全体で見ると
+    無視できないコストになる（プロファイルで判明）。渡されなければ
+    従来通りここで計算する"""
     close_penalty = _CLOSE_PENALTY_BY_COUNT.get(close_count, _CLOSE_PENALTY_CAP)
     near_penalty = _CLOSE_PENALTY_BY_COUNT.get(near_count, _CLOSE_PENALTY_CAP) * _NEAR_PENALTY_FACTOR
     base = max(0.05, BASE_RATE.get(round(dist * 2) / 2, 0.5) - close_penalty - near_penalty)
@@ -517,7 +523,9 @@ def get_success_rate(dist, obstacle_flags, df, close_count=0, near_count=0, pers
     if not personalize:
         return base
 
-    same_close_count = df[DIRS].sum(axis=1) == close_count
+    if dir_count is None:
+        dir_count = df[DIRS].sum(axis=1)
+    same_close_count = dir_count == close_count
     matched_cc = df[same_close_count]
     n_cc = len(matched_cc)
     if n_cc > 0:
@@ -591,6 +599,11 @@ def run_simulation(
     # 7割がget_rate_for、その大半がこの再ソートだと判明）。geom_cacheと
     # 同じタイミングでクリアする
     rate_key_cache = {}
+    # df[DIRS].sum(axis=1)（行ごとの密着方位数）はdfが変わらない限り常に同じ
+    # 結果になるのに、get_success_rate内で呼ばれるたび計算し直すと
+    # pandasのaxis=1方向の合計は遅く、プロファイルで無視できないコストだと
+    # 判明した。シミュレーション全体で1回だけ計算して使い回す
+    _df_dir_count = df[DIRS].sum(axis=1)
 
     def get_rate_for(num, coords_dict, personalize=True):
         """現在の配置に基づいてnum番の成功率を計算（キャッシュ付き）。
@@ -605,7 +618,7 @@ def run_simulation(
         d, obs_tuple = rate_key_cache[num]
         key = (d, obs_tuple, close_count, near_count, personalize)
         if key not in rate_memo:
-            rate_memo[key] = get_success_rate(d, obs, df, close_count, near_count, personalize=personalize)
+            rate_memo[key] = get_success_rate(d, obs, df, close_count, near_count, personalize=personalize, dir_count=_df_dir_count)
         return rate_memo[key]
 
     def move_skittle(coords_dict, num):
@@ -733,6 +746,17 @@ def run_simulation(
 
     results = {}
 
+    # 盤面の初期状態（まだ1本も倒れていない状態）でのgeom_cache/rate_key_cache
+    # は、どの候補・どの試行で使っても共通（coords_dictが同じなため）。
+    # 試行ループの中で毎回空にしてから同じ計算をn_sim回やり直していた
+    # （get_obstacle_infoがプロファイルで全体の2割近くを占めていた）ので、
+    # ここで1回だけ計算し、各試行の開始時はこの「素の状態」を複製するだけに
+    # する（的を倒して盤面が動いたら、move_skittle側で通常通り空にする）
+    for _n in base_active:
+        get_rate_for(_n, skittle_coords)
+    _pristine_geom_cache = dict(geom_cache)
+    _pristine_rate_key_cache = dict(rate_key_cache)
+
     # 安全な（当てても50点を超えない）的が1本でもあれば、バースト確定の的は
     # そもそも推薦候補にしない（_non_bust_candidatesの説明の通り、実際の
     # 試合でわざわざ狙う選手はいないため）。全部バーストする状況だけは
@@ -743,8 +767,13 @@ def run_simulation(
         for _ in range(n_sim):
             # 各試行ごとに座標をコピー（独立した盤面で進行）
             sim_coords = {n: c for n, c in skittle_coords.items()}
+            # 空にするのではなく、初期盤面の内容（_pristine_*）を複製するだけに
+            # することで、試行開始直後（まだ1本も倒れていない間）の
+            # get_obstacle_info再計算を避ける
             geom_cache.clear()
+            geom_cache.update(_pristine_geom_cache)
             rate_key_cache.clear()
+            rate_key_cache.update(_pristine_rate_key_cache)
             greedy_memo.clear()
 
             ms = my_score
