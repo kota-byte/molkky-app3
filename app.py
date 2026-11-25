@@ -592,6 +592,26 @@ def run_simulation(
     # 同じ局面を何度も再計算していた。move_skittleで盤面が動いたら必ず
     # geom_cacheと一緒にクリアする
     greedy_memo = {}
+    # shortlist（近さで絞り込んだ候補）は得点(score)と盤上の的集合(active_tuple)
+    # だけで決まり、盤面の座標（coords_dict）にも depth にも personalize にも
+    # 依存しない。なのに今まではpick_target/_greedy_valueが呼ばれるたび
+    # （move_skittleでの盤面変化に関係なく）毎回ソートし直していた。
+    # 同じscoreは別の試行・別のdepth・自分/相手どちらの番でも何度も出てくる
+    # （特にバーストで25点に着地するケースが多い）ため、盤面が動いても
+    # クリアせず、run_simulation全体で使い回す
+    shortlist_cache = {}
+
+    def _get_shortlist(score, active_now, active_tuple, shortlist_size):
+        key = (score, active_tuple, shortlist_size)
+        cached = shortlist_cache.get(key)
+        if cached is not None:
+            return cached
+        def _closeness_of(n):
+            return abs(score + n - 50) if score + n <= 50 else abs(score + n - 25 - 50)
+        result = sorted(_non_bust_candidates(score, active_now), key=_closeness_of)[:shortlist_size]
+        shortlist_cache[key] = result
+        return result
+
     # get_rate_forのキャッシュキー(d, 障害物フラグをソートしたタプル)。
     # geom_cacheがヒットしている間はdもこのタプルも同じ値になるのに、
     # 以前はrate_memoがヒットする場合でもキー生成のためだけに毎回
@@ -655,9 +675,10 @@ def run_simulation(
         if cached is not None:
             return cached
 
+        shortlist = _get_shortlist(score, active_now, active_tuple, shortlist_size)
+
         def closeness_of(n):
             return abs(score + n - 50) if score + n <= 50 else abs(score + n - 25 - 50)
-        shortlist = sorted(_non_bust_candidates(score, active_now), key=closeness_of)[:shortlist_size]
 
         if depth <= 0:
             best = -1.0
@@ -712,10 +733,7 @@ def run_simulation(
         # 変わらないので、ソート済みタプルを1回だけ作って_greedy_valueに渡す
         # （_greedy_value内で毎回ソートし直すのを避けるため）
         active_tuple = tuple(sorted(active_now))
-
-        def closeness_of(n):
-            return abs(score + n - 50) if score + n <= 50 else abs(score + n - 25 - 50)
-        shortlist = sorted(_non_bust_candidates(score, active_now), key=closeness_of)[:shortlist_size]
+        shortlist = _get_shortlist(score, active_now, active_tuple, shortlist_size)
         # 外した場合の評価値はどの候補を選んでも同じ（スコア・盤面が
         # 変わらないため）なので、候補ループの外で1回だけ計算する
         if miss_count >= 2:
