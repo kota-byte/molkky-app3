@@ -2114,15 +2114,33 @@ elif page == "🎯 投擲データ記録":
             exp['throw_count'] += 1
             snapshot = st.session_state.pending_throw_snapshot
             post_coords_json = _coords_json(st.session_state.skittle_m_coords)
+            # アプリなし条件ではAIシミュレーター画面を使わないため、そちらで
+            # 取っていたsnapshot（my_score/opp_score等）が空のままのことがある
+            # （「📸 この状態を記録する」を押し忘れる、あるいはそもそも訪れない
+            # 運用だと特に起きやすい）。得点・連続ミスはこの画面自身が
+            # 持っている値（投げる前の状態そのもの）で確実に埋められるので、
+            # snapshot側が空の時だけこちらを使う
+            _snap_my_score = snapshot.get("my_score", "")
+            if _snap_my_score == "":
+                _snap_my_score = ps['my_score_game']
+            _snap_my_miss = snapshot.get("my_miss", "")
+            if _snap_my_miss == "":
+                _snap_my_miss = ps['my_miss_game']
+            _snap_opp_score = snapshot.get("opp_score", "")
+            _snap_opp_miss = snapshot.get("opp_miss", "")
+            if _snap_opp_score == "" and _partner:
+                _partner_live = _load_partner_score(_partner)
+                if _partner_live:
+                    _snap_opp_score, _snap_opp_miss = _partner_live
             append_throw_log({
                 "ユーザーID": st.session_state.current_player,
                 "試合番号": exp["match_number"],
                 "条件": exp["condition"],
                 "何投目か": exp["throw_count"],
-                "自分の得点（投擲前）": snapshot.get("my_score", ""),
-                "相手の得点（投擲前）": snapshot.get("opp_score", ""),
-                "自分の連続ミス回数（投擲前）": snapshot.get("my_miss", ""),
-                "相手の連続ミス回数（投擲前）": snapshot.get("opp_miss", ""),
+                "自分の得点（投擲前）": _snap_my_score,
+                "相手の得点（投擲前）": _snap_opp_score,
+                "自分の連続ミス回数（投擲前）": _snap_my_miss,
+                "相手の連続ミス回数（投擲前）": _snap_opp_miss,
                 "AI1位スキットル番号": snapshot.get("ai_top1_num", ""),
                 "AI1位勝率": snapshot.get("ai_top1_prob", ""),
                 "AI2位スキットル番号": snapshot.get("ai_top2_num", ""),
