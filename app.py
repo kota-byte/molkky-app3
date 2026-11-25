@@ -1623,7 +1623,13 @@ def _poll_skittle_layout_from_camera():
     記録画面の「記録を保存する」ボタンが押された瞬間に限定する。
     一方、今が相手の番（自分は記録待ちで何も記録していない）なら、自分
     側には保護すべき「投げる前の盤面」が無いので、保留せずそのまま
-    反映する（相手が記録ボタンを押すのを待つ必要がない）"""
+    反映する（相手が記録ボタンを押すのを待つ必要がない）。
+    今の番が未確定（新しい試合の開始直後でまだ誰も記録していない、
+    または盤面共有相手がいない）の時は、保護すべき「記録中の投擲」が
+    まだ存在しないはずなので、どちらの番でもない＝保留しない扱いにする
+    （以前は未確定を「自分の番」扱いにしていたため、新しい試合の開始直後は
+    両者とも保留してしまい、どちらの画面にも並べ直した配置が反映されない
+    という不具合があった）"""
     _coords, _updated_at = _load_skittle_layout_from_db(_skittle_identity())
     if _updated_at is None or _updated_at == st.session_state.get('skittle_layout_last_seen'):
         return
@@ -1636,7 +1642,7 @@ def _poll_skittle_layout_from_camera():
 
     _partner = st.session_state.get('board_share_partner')
     _current_turn = _load_current_turn(_turn_identity()) if _partner else None
-    _is_my_turn = _current_turn is None or _current_turn == st.session_state.current_player
+    _is_my_turn = _current_turn == st.session_state.current_player
 
     if _is_my_turn:
         st.session_state.pending_camera_coords = _new_coords
