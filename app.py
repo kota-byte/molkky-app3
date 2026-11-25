@@ -1583,13 +1583,18 @@ if st.session_state.get('skittle_layout_dirty'):
 @st.fragment(run_every=5)
 def _poll_skittle_layout_from_camera():
     """カメラ側（live計測システム）が盤面を更新していないか5秒おきに確認する。
-    更新日時が前回見た値と変わっていたら読み込み直すが、アプリが実際に使う
-    skittle_m_coordsにはまだ反映しない。ここで即座に反映すると、投げてから
-    「記録を保存する」を押すまでの間に新しい配置が割り込み、今まさに記録しよう
-    としている投擲（投げる前の盤面を前提にした障害物判定など）に途中から
-    投げた後の配置が混ざってしまう。そのため一旦pending_camera_coordsに
-    保留しておき、実際にskittle_m_coordsへ反映する（＝盤面が次の状態へ進む）
-    のは、投擲データ記録画面の「記録を保存する」ボタンが押された瞬間に限定する"""
+    更新日時が前回見た値と変わっていたら読み込み直す。
+    盤面共有相手がいて、かつ今が自分の番（＝これから自分が記録する投擲が
+    ある）なら、アプリが実際に使うskittle_m_coordsにはまだ反映しない。
+    ここで即座に反映すると、投げてから「記録を保存する」を押すまでの間に
+    新しい配置が割り込み、今まさに記録しようとしている投擲（投げる前の
+    盤面を前提にした障害物判定など）に途中から投げた後の配置が混ざって
+    しまう。そのため一旦pending_camera_coordsに保留しておき、実際に
+    skittle_m_coordsへ反映する（＝盤面が次の状態へ進む）のは、投擲データ
+    記録画面の「記録を保存する」ボタンが押された瞬間に限定する。
+    一方、今が相手の番（自分は記録待ちで何も記録していない）なら、自分
+    側には保護すべき「投げる前の盤面」が無いので、保留せずそのまま
+    反映する（相手が記録ボタンを押すのを待つ必要がない）"""
     _coords, _updated_at = _load_skittle_layout_from_db(_skittle_identity())
     if _updated_at is None or _updated_at == st.session_state.get('skittle_layout_last_seen'):
         return
@@ -1599,7 +1604,17 @@ def _poll_skittle_layout_from_camera():
         _n = item.get("n")
         if _n and 1 <= _n <= 12:
             _new_coords[_n] = (item["x"], item["y"])
-    st.session_state.pending_camera_coords = _new_coords
+
+    _partner = st.session_state.get('board_share_partner')
+    _current_turn = _load_current_turn(_turn_identity()) if _partner else None
+    _is_my_turn = _current_turn is None or _current_turn == st.session_state.current_player
+
+    if _is_my_turn:
+        st.session_state.pending_camera_coords = _new_coords
+    else:
+        st.session_state.skittle_m_coords = _new_coords
+        st.session_state.last_target_no_for_autofill = None
+
     # 記録中（評価実験で試合をスタートしている間）だけ、カメラが送ってきた
     # この配置をスプレッドシートにも自動で残す（「📍 配置を記録する」ボタンを
     # 手動で押す代わり）。この関数は冒頭のupdated_atチェックで同じ更新を
@@ -1615,6 +1630,19 @@ def _poll_skittle_layout_from_camera():
             "条件": _exp["condition"],
             "スキットル配置": _coords_json(_new_coords),
         })
+
+    if _is_my_turn:
+        return
+    if page == "🎯 投擲データ記録":
+        # 投擲データ記録画面では、他の操作中にst.rerun()が割り込むと二重記録等の
+        # 実害があり得るため、この画面でだけは強制rerunしない（相手の番でも）。
+        # session_stateの更新はここまでで済んでいるので、自分の次の操作による
+        # 通常のrerunで自然に画面へ反映される
+        return
+    # canvas_versionを進めてcanvas_keyを変える。これをしないと画面2のst_canvasが
+    # 古いキーのまま＝古い内部状態を表示し続けてしまう
+    st.session_state['canvas_version'] = st.session_state.get('canvas_version', 0) + 1
+    st.rerun()
 
 _poll_skittle_layout_from_camera()
 
