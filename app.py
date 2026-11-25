@@ -112,6 +112,7 @@ MATCH_LOG_COLUMNS = [
     "3連続ミスによる敗北", "総投擲数", "タイムスタンプ",
 ]
 SKITTLE_SNAPSHOT_COLUMNS = ["ユーザーID", "タイムスタンプ", "試合番号", "条件", "スキットル配置"]
+SKITTLE_SAVE_SNAPSHOT_COLUMNS = ["ユーザーID", "タイムスタンプ", "試合番号", "条件", "スキットル配置"]
 
 def _gsheets_log_error(context, e):
     import traceback
@@ -185,6 +186,22 @@ def append_skittle_snapshot(row: dict):
         return True
     except Exception as e:
         _gsheets_log_error("append skittle_snapshots row", e)
+        return False
+
+def append_skittle_save_snapshot(row: dict):
+    """投擲データ記録画面の「記録を保存する」ボタンを押した段階＝投げる前（この投擲の
+    障害物判定などに使ってきた、pending_camera_coordsをまだ確定反映する前）の
+    スキットル配置だけを、記録中かどうかに関わらず毎回skittle_save_snapshotsシートに
+    追記する（throw_logsの「スキットル配置」は記録中だけにしか書かれないため、
+    それとは別に配置の推移だけを常に追えるようにする用途）"""
+    ws = _gsheets_worksheet("skittle_save_snapshots", SKITTLE_SAVE_SNAPSHOT_COLUMNS)
+    if ws is None:
+        return False
+    try:
+        ws.append_row([row.get(c, "") for c in SKITTLE_SAVE_SNAPSHOT_COLUMNS], value_input_option="USER_ENTERED")
+        return True
+    except Exception as e:
+        _gsheets_log_error("append skittle_save_snapshots row", e)
         return False
 
 import math
@@ -2065,6 +2082,21 @@ elif page == "🎯 投擲データ記録":
                 s.commit()
             st.session_state['last_throw_undo']['throw_log_id'] = _inserted_id
 
+        exp = st.session_state.experiment
+
+        # 「記録を保存する」を押した段階＝投げる前（pending_camera_coordsをまだ
+        # 確定反映する前）のスキットル配置だけを、記録中かどうかに関わらず毎回
+        # skittle_save_snapshotsシートに残す（評価実験のthrow_logsは記録中だけに
+        # しか書かれないため、それとは別枠。この投擲の障害物判定もここまで
+        # ずっとこの「投げる前」の配置を前提に使ってきている）
+        append_skittle_save_snapshot({
+            "ユーザーID": st.session_state.current_player,
+            "タイムスタンプ": _now_jst().strftime("%Y-%m-%d %H:%M:%S"),
+            "試合番号": exp["match_number"],
+            "条件": exp["condition"],
+            "スキットル配置": _coords_json(st.session_state.skittle_m_coords),
+        })
+
         # この投擲の判定（障害物配置など）はここまで投げる前の盤面を前提に
         # 使ってきたので、カメラが検知した新しい配置（pending_camera_coords）は
         # ここで初めて確定反映する。これで盤面は「この投擲が終わった後」の
@@ -2078,7 +2110,6 @@ elif page == "🎯 投擲データ記録":
 
         # 実験ログ：記録中（評価実験画面でスタートした状態）のみ、AIシミュレーター画面で
         # 記録した投擲前スナップショットと今回の結果を合体してSheetsに追記する
-        exp = st.session_state.experiment
         if exp['recording']:
             exp['throw_count'] += 1
             snapshot = st.session_state.pending_throw_snapshot
