@@ -1208,18 +1208,6 @@ def _set_current_turn(identity, player_name):
         )
         s.commit()
 
-def _clear_current_turn(identity):
-    """「今の番」の記録を消す。新しい試合の開始時に呼ぶ。前の試合の最後に
-    どちらの番だったかをそのまま引き継ぐと、新しい試合用にスキットルを
-    並べ直した配置（カメラ検知）が、たまたま引き継がれた番の側でだけ
-    保留され続けて反映されない、という分かりにくい状態になるため"""
-    with db_conn.session as s:
-        s.execute(
-            text("DELETE FROM pair_turn WHERE identity = :identity"),
-            {"identity": identity}
-        )
-        s.commit()
-
 @st.fragment(run_every=5)
 def _render_score_section(my_name, my_score, my_miss):
     """自分の得点カード・共有相手の得点カードをまとめて5秒おきに表示し直す。
@@ -2649,15 +2637,26 @@ else:
     )
     st.caption(f"🏐 試合 {exp['match_number']} ／ 投擲 {exp['throw_count']}回目")
 
+    _partner_for_start = st.session_state.get('board_share_partner')
+    _first_player = None
+    if not exp["recording"] and _partner_for_start:
+        # 先手を明示的に選んでもらい、その場で「今の番」を確定させる。
+        # 未確定のまま始めると、1投目を評価する手段（シミュレーター画面での
+        # 計算）を使わない運用の場合、1投目だけ保留が効かず障害物判定に
+        # 投げた後の配置が混ざってしまう問題があったため
+        _first_player = st.radio(
+            "先手（最初に投げる人）",
+            [st.session_state.current_player, _partner_for_start],
+            horizontal=True,
+            key=f"exp_first_player_radio_{exp['match_number']}",
+        )
+
     if not exp["recording"]:
         if st.button("▶️ スタート", type="primary", use_container_width=True):
             exp["recording"] = True
             _reset_current_game()
-            if st.session_state.get('board_share_partner'):
-                # 前の試合の最後の「今の番」を引き継がない（新しい試合用に
-                # 並べ直した配置が、引き継がれた番のせいで片方にだけ
-                # 反映されない問題を防ぐ）
-                _clear_current_turn(_turn_identity())
+            if _partner_for_start:
+                _set_current_turn(_turn_identity(), _first_player)
             st.rerun()
     else:
         st.markdown("🔴 **記録中**")
