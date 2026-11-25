@@ -1208,6 +1208,18 @@ def _set_current_turn(identity, player_name):
         )
         s.commit()
 
+def _clear_current_turn(identity):
+    """「今の番」の記録を消す。新しい試合の開始時に呼ぶ。前の試合の最後に
+    どちらの番だったかをそのまま引き継ぐと、新しい試合用にスキットルを
+    並べ直した配置（カメラ検知）が、たまたま引き継がれた番の側でだけ
+    保留され続けて反映されない、という分かりにくい状態になるため"""
+    with db_conn.session as s:
+        s.execute(
+            text("DELETE FROM pair_turn WHERE identity = :identity"),
+            {"identity": identity}
+        )
+        s.commit()
+
 @st.fragment(run_every=5)
 def _render_score_section(my_name, my_score, my_miss):
     """自分の得点カード・共有相手の得点カードをまとめて5秒おきに表示し直す。
@@ -2355,7 +2367,7 @@ elif page == "🤖 AI戦術提示シミュレーター":
         st.write("")
         st.subheader("🗺️ 全スキットル位置再現マップ")
 
-        col_space, col_btn1, col_btn2 = st.columns([1, 1.5, 1.5])
+        col_btn1, col_btn2, col_btn3 = st.columns(3)
         with col_btn1:
             if st.button("⛶ 全画面コートで配置", type="primary", use_container_width=True):
                 st.session_state.fullscreen = True
@@ -2365,6 +2377,15 @@ elif page == "🤖 AI戦術提示シミュレーター":
             if st.button("🔄 ピンをリセット", use_container_width=True):
                 st.session_state.skittle_m_coords = {num: None for num in range(1, 13)}
                 _mark_skittle_layout_dirty()
+                st.rerun()
+        with col_btn3:
+            # スマホの画面ロック等で5秒おきの自動チェックが止まっていた場合に、
+            # ロック解除後すぐ手動で最新状態を取りに行けるようにするボタン。
+            # 実体は何もせずrerunするだけで、通常の画面遷移などと同じく
+            # _poll_skittle_layout_from_camera()が普通に実行される（自分の番
+            # なら保留、相手の番なら即反映、という既存のルールはそのまま）
+            if st.button("🔄 マップ更新", use_container_width=True):
+                st.toast("最新の状態を確認しました。", icon="🔄")
                 st.rerun()
 
         # ========================
@@ -2626,6 +2647,11 @@ else:
         if st.button("▶️ スタート", type="primary", use_container_width=True):
             exp["recording"] = True
             _reset_current_game()
+            if st.session_state.get('board_share_partner'):
+                # 前の試合の最後の「今の番」を引き継がない（新しい試合用に
+                # 並べ直した配置が、引き継がれた番のせいで片方にだけ
+                # 反映されない問題を防ぐ）
+                _clear_current_turn(_turn_identity())
             st.rerun()
     else:
         st.markdown("🔴 **記録中**")
