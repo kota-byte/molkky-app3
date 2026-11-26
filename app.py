@@ -78,6 +78,17 @@ def init_db():
                      (identity TEXT PRIMARY KEY,
                       current_turn TEXT,
                       updated_at TIMESTAMPTZ DEFAULT now())'''))
+        s.execute(text('''CREATE TABLE IF NOT EXISTS experiment_state
+                     (player_name TEXT PRIMARY KEY,
+                      recording BOOLEAN,
+                      match_number INTEGER,
+                      condition TEXT,
+                      throw_count INTEGER,
+                      my_bounce_count INTEGER,
+                      opp_bounce_count INTEGER,
+                      opp_score_prev INTEGER,
+                      miss_loss BOOLEAN,
+                      updated_at TIMESTAMPTZ DEFAULT now())'''))
         obstacle_cols = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw']
         for col in obstacle_cols:
             s.execute(text(f"ALTER TABLE throw_logs ADD COLUMN IF NOT EXISTS {col} INTEGER DEFAULT 0"))
@@ -1303,14 +1314,76 @@ def _default_experiment_state():
         "miss_loss": False,
     }
 
+def _load_experiment_state(player_name):
+    """評価実験の状態（記録中かどうか含む）をDBから読む。保存が無ければNone。
+    session_stateだけに持たせていると、ブラウザをリロードしただけで
+    セッションが作り直され「記録中」が勝手に終了してしまうため、プレイヤー名に
+    紐づけてDBにも保存しておき、リロード後も同じプレイヤーなら復元する"""
+    result = db_conn.query(
+        '''SELECT recording, match_number, condition, throw_count, my_bounce_count,
+                  opp_bounce_count, opp_score_prev, miss_loss
+           FROM experiment_state WHERE player_name = :name''',
+        params={"name": player_name}, ttl=0
+    )
+    if result.empty:
+        return None
+    row = result.iloc[0]
+    return {
+        "recording": bool(row["recording"]),
+        "match_number": int(row["match_number"]),
+        "condition": row["condition"],
+        "throw_count": int(row["throw_count"]),
+        "my_bounce_count": int(row["my_bounce_count"]),
+        "opp_bounce_count": int(row["opp_bounce_count"]),
+        "opp_score_prev": int(row["opp_score_prev"]),
+        "miss_loss": bool(row["miss_loss"]),
+    }
+
+def _save_experiment_state(player_name, exp):
+    with db_conn.session as s:
+        s.execute(
+            text('''INSERT INTO experiment_state
+                        (player_name, recording, match_number, condition, throw_count,
+                         my_bounce_count, opp_bounce_count, opp_score_prev, miss_loss, updated_at)
+                    VALUES (:name, :recording, :match_number, :condition, :throw_count,
+                            :my_bounce_count, :opp_bounce_count, :opp_score_prev, :miss_loss, now())
+                    ON CONFLICT (player_name) DO UPDATE SET
+                        recording = :recording, match_number = :match_number, condition = :condition,
+                        throw_count = :throw_count, my_bounce_count = :my_bounce_count,
+                        opp_bounce_count = :opp_bounce_count, opp_score_prev = :opp_score_prev,
+                        miss_loss = :miss_loss, updated_at = now()'''),
+            {
+                "name": player_name,
+                "recording": exp["recording"],
+                "match_number": exp["match_number"],
+                "condition": exp["condition"],
+                "throw_count": exp["throw_count"],
+                "my_bounce_count": exp["my_bounce_count"],
+                "opp_bounce_count": exp["opp_bounce_count"],
+                "opp_score_prev": exp["opp_score_prev"],
+                "miss_loss": exp["miss_loss"],
+            }
+        )
+        s.commit()
+
 if "experiment" not in st.session_state:
-    st.session_state.experiment = _default_experiment_state()
+    st.session_state.experiment = (
+        _load_experiment_state(st.session_state.current_player) or _default_experiment_state()
+    )
 if "pending_throw_snapshot" not in st.session_state:
     st.session_state.pending_throw_snapshot = {}
 
+# experimentは色々な場所で書き換えられるため、書き換え箇所ごとに保存を
+# 呼ぶのではなく、ここで毎回のスクリプト実行ごとに1回だけDBへ反映する
+# （st.rerun()の直前に限らず、どこで変更されても取りこぼさないため）
+_save_experiment_state(st.session_state.current_player, st.session_state.experiment)
+
 def _reset_experiment_session():
-    """ユーザー切り替え時に評価実験の状態（記録中かどうかを含む）を引き継がないようにする"""
-    st.session_state.experiment = _default_experiment_state()
+    """ユーザー切り替え時に評価実験の状態（記録中かどうかを含む）を引き継がないようにする。
+    ここでは次にログインするプレイヤー自身のDB上の状態を再度読み込ませたいので、
+    固定のデフォルト値ではなくsession_stateのキー自体を消す（次の描画で
+    上のif文が再度走り、その時点のcurrent_playerに応じて正しく復元される）"""
+    st.session_state.pop('experiment', None)
     st.session_state.pending_throw_snapshot = {}
 
 def _reset_match_counters():
