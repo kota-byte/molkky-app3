@@ -1208,6 +1208,19 @@ def _load_current_turn(identity):
         return None
     return result.iloc[0]["current_turn"]
 
+def _load_turn_with_timestamp(identity):
+    """「今の番」とその更新日時をまとめて読む。番の交代（＝相手が記録を
+    保存した瞬間）をポーリング側で検知するために使う。記録が無ければ
+    (None, None)"""
+    result = db_conn.query(
+        "SELECT current_turn, updated_at FROM pair_turn WHERE identity = :identity",
+        params={"identity": identity}, ttl=0
+    )
+    if result.empty:
+        return None, None
+    row = result.iloc[0]
+    return row["current_turn"], row["updated_at"]
+
 def _set_current_turn(identity, player_name):
     """「今の番」をDBに保存する（記録を保存するたびに相手へ交代させる）"""
     with db_conn.session as s:
@@ -1640,6 +1653,9 @@ if st.session_state.get('skittle_layout_identity') != _skittle_identity():
     st.session_state.skittle_layout_identity = _skittle_identity()
     # 距離・障害物配置の自動入力も、前の盤面を基準にした値を引き継がせない
     st.session_state.last_target_no_for_autofill = None
+    # 「今の番」の更新日時の見た目上の比較対象も、識別子（共有相手）が
+    # 変わったらリセットする（別のpair_turn行と比較しても意味が無いため）
+    st.session_state.pop('turn_last_seen', None)
 
 if not st.session_state.get('skittle_layout_restore_checked', True):
     _restored_layout, _restored_updated_at = _load_skittle_layout_from_db(_skittle_identity())
@@ -1673,62 +1689,64 @@ if st.session_state.get('skittle_layout_dirty'):
 @st.fragment(run_every=5)
 def _poll_skittle_layout_from_camera():
     """カメラ側（live計測システム）が盤面を更新していないか5秒おきに確認する。
-    更新日時が前回見た値と変わっていたら読み込み直す。
-    盤面共有相手がいて、かつ今が自分の番（＝これから自分が記録する投擲が
-    ある）なら、アプリが実際に使うskittle_m_coordsにはまだ反映しない。
-    ここで即座に反映すると、投げてから「記録を保存する」を押すまでの間に
-    新しい配置が割り込み、今まさに記録しようとしている投擲（投げる前の
-    盤面を前提にした障害物判定など）に途中から投げた後の配置が混ざって
-    しまう。そのため一旦pending_camera_coordsに保留しておき、実際に
-    skittle_m_coordsへ反映する（＝盤面が次の状態へ進む）のは、投擲データ
-    記録画面の「記録を保存する」ボタンが押された瞬間に限定する。
-    一方、今が相手の番（自分は記録待ちで何も記録していない）なら、自分
-    側には保護すべき「投げる前の盤面」が無いので、保留せずそのまま
-    反映する（相手が記録ボタンを押すのを待つ必要がない）。
-    今の番が未確定（新しい試合の開始直後でまだ誰も記録していない、
-    または盤面共有相手がいない）の時は、保護すべき「記録中の投擲」が
-    まだ存在しないはずなので、どちらの番でもない＝保留しない扱いにする
-    （以前は未確定を「自分の番」扱いにしていたため、新しい試合の開始直後は
-    両者とも保留してしまい、どちらの画面にも並べ直した配置が反映されない
-    という不具合があった）"""
+    更新日時が前回見た値と変わっていたら読み込み直すが、検知した配置は
+    まず全員（自分の番でも相手の番でも）pending_camera_coordsに保留する
+    だけで、アプリが実際に使うskittle_m_coordsにはまだ反映しない。
+    実際にskittle_m_coordsへ反映する（＝盤面が次の状態へ進む）タイミングは、
+    今の番の人（これから記録する人）が「記録を保存する」ボタンを押した
+    瞬間に限定し、記録待ちの相手も「番が交代した」ことをここで検知した
+    瞬間に合わせて同時に反映する。これにより、二人が見ている盤面が
+    ずれている時間帯（相手が先に見えてしまい、記録する側はまだ保留中、
+    という状態）を無くしている。
+    盤面共有相手がいない（ソロ）場合は、今まで通り自分の「記録を保存する」
+    が唯一の反映タイミングになる（ここでは保留するだけで反映しない）。
+    ※新しい試合の最初の1回だけ、まだ誰も投げていない間に検知された
+    公式配置は「番の交代」自体がまだ一度も起きないため、ポーリングの
+    タイミング次第では自動反映されないことがある（その場合はシミュレーター
+    画面の「🔄 マップ更新」で手動確認できる）"""
     _coords, _updated_at = _load_skittle_layout_from_db(_skittle_identity())
-    if _updated_at is None or _updated_at == st.session_state.get('skittle_layout_last_seen'):
-        return
-    st.session_state.skittle_layout_last_seen = _updated_at
-    _new_coords = {num: None for num in range(1, 13)}
-    for item in (_coords or []):
-        _n = item.get("n")
-        if _n and 1 <= _n <= 12:
-            _new_coords[_n] = (item["x"], item["y"])
+    if _updated_at is not None and _updated_at != st.session_state.get('skittle_layout_last_seen'):
+        st.session_state.skittle_layout_last_seen = _updated_at
+        _new_coords = {num: None for num in range(1, 13)}
+        for item in (_coords or []):
+            _n = item.get("n")
+            if _n and 1 <= _n <= 12:
+                _new_coords[_n] = (item["x"], item["y"])
+        st.session_state.pending_camera_coords = _new_coords
+
+        # 記録中（評価実験で試合をスタートしている間）だけ、カメラが送ってきた
+        # この配置をスプレッドシートにも自動で残す（「📍 配置を記録する」ボタンを
+        # 手動で押す代わり）。この関数は冒頭のupdated_atチェックで同じ更新を
+        # 2回処理しないようになっているので、ここでの二重記録は起きない。
+        # これはアプリの表示状態（skittle_m_coords）とは別枠の記録なので、
+        # pending化の影響は受けず今まで通り検知のたびに記録する
+        _exp = st.session_state.get('experiment')
+        if _exp and _exp.get('recording'):
+            append_skittle_snapshot({
+                "ユーザーID": st.session_state.current_player,
+                "タイムスタンプ": _now_jst().strftime("%Y-%m-%d %H:%M:%S"),
+                "試合番号": _exp["match_number"],
+                "条件": _exp["condition"],
+                "スキットル配置": _coords_json(_new_coords),
+            })
 
     _partner = st.session_state.get('board_share_partner')
-    _current_turn = _load_current_turn(_turn_identity()) if _partner else None
-    _is_my_turn = _current_turn == st.session_state.current_player
-
-    if _is_my_turn:
-        st.session_state.pending_camera_coords = _new_coords
-    else:
-        st.session_state.skittle_m_coords = _new_coords
-        st.session_state.last_target_no_for_autofill = None
-
-    # 記録中（評価実験で試合をスタートしている間）だけ、カメラが送ってきた
-    # この配置をスプレッドシートにも自動で残す（「📍 配置を記録する」ボタンを
-    # 手動で押す代わり）。この関数は冒頭のupdated_atチェックで同じ更新を
-    # 2回処理しないようになっているので、ここでの二重記録は起きない。
-    # これはアプリの表示状態（skittle_m_coords）とは別枠の記録なので、
-    # pending化の影響は受けず今まで通り検知のたびに記録する
-    _exp = st.session_state.get('experiment')
-    if _exp and _exp.get('recording'):
-        append_skittle_snapshot({
-            "ユーザーID": st.session_state.current_player,
-            "タイムスタンプ": _now_jst().strftime("%Y-%m-%d %H:%M:%S"),
-            "試合番号": _exp["match_number"],
-            "条件": _exp["condition"],
-            "スキットル配置": _coords_json(_new_coords),
-        })
-
-    if _is_my_turn:
+    if not _partner:
         return
+
+    _, _turn_updated_at = _load_turn_with_timestamp(_turn_identity())
+    if _turn_updated_at is None or _turn_updated_at == st.session_state.get('turn_last_seen'):
+        return
+    st.session_state.turn_last_seen = _turn_updated_at
+
+    # 番の交代（＝誰かが保存した瞬間）を検知したタイミングで保留分を反映する。
+    # 今の番が誰になったかは関係ない（交代＝保存が起きた、という事実だけが重要）
+    if st.session_state.get('pending_camera_coords') is None:
+        return
+    st.session_state.skittle_m_coords = st.session_state.pending_camera_coords
+    st.session_state.pending_camera_coords = None
+    st.session_state.last_target_no_for_autofill = None
+
     if page == "🎯 投擲データ記録":
         # 投擲データ記録画面では、他の操作中にst.rerun()が割り込むと二重記録等の
         # 実害があり得るため、この画面でだけは強制rerunしない（相手の番でも）。
