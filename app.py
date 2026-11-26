@@ -1640,6 +1640,27 @@ def _save_skittle_layout_to_db(identity, coords_list):
         )
         s.commit()
 
+def _force_sync_skittle_layout():
+    """番の交代待ちのルールを無視して、カメラが今検知している最新の配置を
+    自分の画面へ即座に反映する。試合開始直後（まだ番の交代が一度も
+    起きておらず、保留の仕組みでは配置を拾えない、かつ誰もまだ投げていない
+    ので保護すべき状態も無い）にだけ呼ばれる"""
+    _coords, _updated_at = _load_skittle_layout_from_db(_skittle_identity())
+    _new_coords = {num: None for num in range(1, 13)}
+    for item in (_coords or []):
+        _n = item.get("n")
+        if _n and 1 <= _n <= 12:
+            _new_coords[_n] = (item["x"], item["y"])
+    st.session_state.skittle_m_coords = _new_coords
+    st.session_state.pending_camera_coords = None
+    st.session_state.last_target_no_for_autofill = None
+    if _updated_at is not None:
+        st.session_state.skittle_layout_last_seen = _updated_at
+    if st.session_state.get('board_share_partner'):
+        _, _turn_updated_at = _load_turn_with_timestamp(_turn_identity())
+        if _turn_updated_at is not None:
+            st.session_state.turn_last_seen = _turn_updated_at
+
 if "skittle_m_coords" not in st.session_state:
     st.session_state.skittle_m_coords = {num: None for num in range(1, 13)}
     st.session_state.skittle_layout_restore_checked = False
@@ -1686,12 +1707,26 @@ if st.session_state.get('skittle_layout_dirty'):
     _save_skittle_layout_to_db(_skittle_identity(), coords_list)
     st.session_state.skittle_layout_dirty = False
 
+def _apply_pending_camera_coords():
+    """pending_camera_coordsをskittle_m_coordsへ反映する。保留が無ければ
+    何もしない（falseを返す）"""
+    if st.session_state.get('pending_camera_coords') is None:
+        return False
+    st.session_state.skittle_m_coords = st.session_state.pending_camera_coords
+    st.session_state.pending_camera_coords = None
+    st.session_state.last_target_no_for_autofill = None
+    return True
+
 @st.fragment(run_every=5)
 def _poll_skittle_layout_from_camera():
     """カメラ側（live計測システム）が盤面を更新していないか5秒おきに確認する。
     更新日時が前回見た値と変わっていたら読み込み直すが、検知した配置は
     まず全員（自分の番でも相手の番でも）pending_camera_coordsに保留する
-    だけで、アプリが実際に使うskittle_m_coordsにはまだ反映しない。
+    だけで、アプリが実際に使うskittle_m_coordsにはまだ反映しない（ただし、
+    今の盤面に何も配置されていない＝保護すべき「投げる前の状態」がまだ
+    存在しない場合は、保留せずそのまま反映する。新しい試合の最初の1回
+    だけ発生するケースで、これが無いと誰かが最初の投擲を記録するまで
+    初期配置が誰の画面にも一切出ない、という問題があったため）。
     実際にskittle_m_coordsへ反映する（＝盤面が次の状態へ進む）タイミングは、
     今の番の人（これから記録する人）が「記録を保存する」ボタンを押した
     瞬間に限定し、記録待ちの相手も「番が交代した」ことをここで検知した
@@ -1699,11 +1734,7 @@ def _poll_skittle_layout_from_camera():
     ずれている時間帯（相手が先に見えてしまい、記録する側はまだ保留中、
     という状態）を無くしている。
     盤面共有相手がいない（ソロ）場合は、今まで通り自分の「記録を保存する」
-    が唯一の反映タイミングになる（ここでは保留するだけで反映しない）。
-    ※新しい試合の最初の1回だけ、まだ誰も投げていない間に検知された
-    公式配置は「番の交代」自体がまだ一度も起きないため、ポーリングの
-    タイミング次第では自動反映されないことがある（その場合はシミュレーター
-    画面の「🔄 マップ更新」で手動確認できる）"""
+    が唯一の反映タイミングになる（ここでは保留するだけで反映しない）。"""
     _coords, _updated_at = _load_skittle_layout_from_db(_skittle_identity())
     if _updated_at is not None and _updated_at != st.session_state.get('skittle_layout_last_seen'):
         st.session_state.skittle_layout_last_seen = _updated_at
@@ -1713,6 +1744,8 @@ def _poll_skittle_layout_from_camera():
             if _n and 1 <= _n <= 12:
                 _new_coords[_n] = (item["x"], item["y"])
         st.session_state.pending_camera_coords = _new_coords
+        if not any(st.session_state.skittle_m_coords.values()):
+            _apply_pending_camera_coords()
 
         # 記録中（評価実験で試合をスタートしている間）だけ、カメラが送ってきた
         # この配置をスプレッドシートにも自動で残す（「📍 配置を記録する」ボタンを
@@ -1741,11 +1774,8 @@ def _poll_skittle_layout_from_camera():
 
     # 番の交代（＝誰かが保存した瞬間）を検知したタイミングで保留分を反映する。
     # 今の番が誰になったかは関係ない（交代＝保存が起きた、という事実だけが重要）
-    if st.session_state.get('pending_camera_coords') is None:
+    if not _apply_pending_camera_coords():
         return
-    st.session_state.skittle_m_coords = st.session_state.pending_camera_coords
-    st.session_state.pending_camera_coords = None
-    st.session_state.last_target_no_for_autofill = None
 
     if page == "🎯 投擲データ記録":
         # 投擲データ記録画面では、他の操作中にst.rerun()が割り込むと二重記録等の
@@ -2467,8 +2497,10 @@ elif page == "🤖 AI戦術提示シミュレーター":
             # スマホの画面ロック等で5秒おきの自動チェックが止まっていた場合に、
             # ロック解除後すぐ手動で最新状態を取りに行けるようにするボタン。
             # 実体は何もせずrerunするだけで、通常の画面遷移などと同じく
-            # _poll_skittle_layout_from_camera()が普通に実行される（自分の番
-            # なら保留、相手の番なら即反映、という既存のルールはそのまま）
+            # _poll_skittle_layout_from_camera()が普通に実行される。番の交代
+            # を待たずに反映してしまうと、自分がまだ記録していない投擲の
+            # 障害物判定に途中から投げた後の配置が混ざるおそれがあるため、
+            # ここでも保留の仕組みは迂回しない
             if st.button("🔄 マップ更新", use_container_width=True):
                 st.toast("最新の状態を確認しました。", icon="🔄")
                 st.rerun()
@@ -2748,6 +2780,10 @@ else:
             _reset_current_game()
             if _partner_for_start:
                 _set_current_turn(_turn_identity(), _first_player)
+            # 試合開始直後はまだ番の交代が一度も起きておらず、保留の仕組み
+            # だけでは投げる前の公式配置を拾えないため、ここで一度だけ
+            # 強制的に最新の検知状態へ同期しておく
+            _force_sync_skittle_layout()
             st.rerun()
     else:
         st.markdown("🔴 **記録中**")
