@@ -1154,10 +1154,14 @@ def _save_own_score_to_db(score, miss):
         s.commit()
 
 def _load_partner_score(partner_name):
-    """共有相手の得点・連続ミスをDBから読む。記録がまだ無ければNone"""
+    """共有相手の得点・連続ミスをDBから読む。記録がまだ無ければNone。
+    自分がこの値を書き込むことは無い（書くのは常に自分自身の名前の行）ため、
+    短くキャッシュしても「書いた直後に読み直して古い値が返る」事故は起きない。
+    同じ瞬間に複数のフラグメントが同じ相手の得点を別々に取りに行く重複を、
+    このキャッシュ1本にまとめて無駄なDBアクセスを減らす"""
     result = db_conn.query(
         "SELECT score, miss FROM player_scores WHERE player_name = :name",
-        params={"name": partner_name}, ttl=0
+        params={"name": partner_name}, ttl=2
     )
     if result.empty:
         return None
