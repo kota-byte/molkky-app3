@@ -1142,6 +1142,9 @@ def _reset_current_game():
     ps['my_score_game'] = 0
     ps['my_miss_game'] = 0
     _mark_score_dirty()
+    # 前の試合のシミュレーション結果が新しい試合に紛れ込んで見えてしまう
+    # ことがないよう、試合の区切り（開始・終了）でクリアする
+    st.session_state.pop('sim_top3_result', None)
 
 def _save_own_score_to_db(score, miss):
     """自分の得点・連続ミスをDBに保存する。board_share_partnerで組んだ相手が
@@ -2740,13 +2743,20 @@ elif page == "🤖 AI戦術提示シミュレーター":
                         st.session_state.pending_throw_snapshot = snapshot
 
                     if results:
-                        st.subheader("🏆 推奨スキットル TOP3")
-                        for rank, (num, prob) in enumerate(top3, 1):
-                            st.metric(
-                                label=f"{rank}位：{num}番スキットル",
-                                value=f"{prob*100:.1f}%",
-                                help=f"このスキットルを狙った場合の勝利確率"
-                            )
+                        # ボタン押下時にしかこのブロックは実行されないので、
+                        # 結果をsession_stateに控えておく。そうしないと
+                        # 画面1・3へ移ってまた画面2に戻ってきた時、ボタンを
+                        # 押していないこのスクリプト実行ではTOP3が消えてしまう
+                        st.session_state.sim_top3_result = top3
+
+        if st.session_state.get('sim_top3_result') and not _no_app_mode:
+            st.subheader("🏆 推奨スキットル TOP3")
+            for rank, (num, prob) in enumerate(st.session_state.sim_top3_result, 1):
+                st.metric(
+                    label=f"{rank}位：{num}番スキットル",
+                    value=f"{prob*100:.1f}%",
+                    help=f"このスキットルを狙った場合の勝利確率"
+                )
 
 # ==========================================
 # 画面3：📋 評価実験
