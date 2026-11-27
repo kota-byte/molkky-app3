@@ -2093,16 +2093,20 @@ elif page == "🎯 投擲データ記録":
     is_opening_gasha = (target_no == "ガシャ")
 
     # 狙う番号を変更したら、マップ上の配置から距離・障害物配置を自動入力する
-    # （「ガシャ」＝特定の1本を狙わない投擲のため、マップから自動入力はしない）
+    # （「ガシャ」＝特定の1本を狙わない投擲のため、マップから自動入力はしない）。
+    # 番号だけでなく、その番号の現在の座標も合わせて比較する。番号が前回と
+    # 同じでも（2投連続で同じスキットルを狙う等）、間にマップが更新されて
+    # 座標が変わっていれば改めて自動入力し直す必要があるため
     if "last_target_no_for_autofill" not in st.session_state:
         st.session_state.last_target_no_for_autofill = None
     target_coord_missing = False
-    if target_no != st.session_state.last_target_no_for_autofill:
-        st.session_state.last_target_no_for_autofill = target_no
+    _current_coord = None if is_opening_gasha else st.session_state.skittle_m_coords.get(target_no)
+    _autofill_key = (target_no, _current_coord)
+    if _autofill_key != st.session_state.last_target_no_for_autofill:
+        st.session_state.last_target_no_for_autofill = _autofill_key
         if not is_opening_gasha:
-            coord = st.session_state.skittle_m_coords.get(target_no)
-            if coord is not None:
-                st.session_state["dist_slider"] = min(10.0, max(3.0, round(coord[1] / 0.5) * 0.5))
+            if _current_coord is not None:
+                st.session_state["dist_slider"] = min(10.0, max(3.0, round(_current_coord[1] / 0.5) * 0.5))
                 flags = get_obstacle_flags(target_no, st.session_state.skittle_m_coords)
                 for k in st.session_state.obstacles:
                     st.session_state.obstacles[k] = bool(flags.get(k, 0))
