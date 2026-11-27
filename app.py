@@ -2777,7 +2777,7 @@ else:
         # 相手の名前と自分の名前を見比べて選ぶより、自分が先手か後手かを
         # 直接選ぶ方が分かりやすいので、ラベルは「先手／後手」にする
         _turn_order = st.radio(
-            "自分は先手・後手どちら？",
+            "順番",
             ["先手", "後手"],
             horizontal=True,
             key=f"exp_first_player_radio_{exp['match_number']}",
