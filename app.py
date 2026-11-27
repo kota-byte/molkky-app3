@@ -121,6 +121,7 @@ MATCH_LOG_COLUMNS = [
     "ユーザーID", "試合番号", "条件", "勝敗",
     "25点戻り回数（自分）", "25点戻り回数（相手）",
     "3連続ミスによる敗北", "総投擲数", "タイムスタンプ",
+    "自分の最終得点", "相手の最終得点",
 ]
 SKITTLE_SNAPSHOT_COLUMNS = ["ユーザーID", "タイムスタンプ", "試合番号", "条件", "スキットル配置"]
 SKITTLE_SAVE_SNAPSHOT_COLUMNS = ["ユーザーID", "タイムスタンプ", "試合番号", "条件", "スキットル配置"]
@@ -1430,6 +1431,15 @@ def _reset_match_counters():
 
 def _log_match_end(result):
     exp = st.session_state.experiment
+    # リセットする前（＝この試合が終わった瞬間）の得点を記録する。勝ちの場合は
+    # 自分の最終得点は定義上ちょうど50になる
+    ps = get_player_state()
+    _partner = st.session_state.get('board_share_partner')
+    if _partner:
+        _partner_live = _load_partner_score(_partner)
+        _opp_final_score = _partner_live[0] if _partner_live else 0
+    else:
+        _opp_final_score = st.session_state.opponents[0]['score']
     append_match_log({
         "ユーザーID": st.session_state.current_player,
         "試合番号": exp["match_number"],
@@ -1440,6 +1450,8 @@ def _log_match_end(result):
         "3連続ミスによる敗北": "あり" if exp["miss_loss"] else "なし",
         "総投擲数": exp["throw_count"],
         "タイムスタンプ": _now_jst().strftime("%Y-%m-%d %H:%M:%S"),
+        "自分の最終得点": ps['my_score_game'],
+        "相手の最終得点": _opp_final_score,
     })
     _reset_match_counters()
     _reset_current_game()
