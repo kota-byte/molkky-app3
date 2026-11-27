@@ -2171,6 +2171,9 @@ elif page == "🎯 投擲データ記録":
             'sw': '左前', 's': '手前', 'se': '右前'
         }
 
+        def _toggle_obstacle(k):
+            st.session_state.obstacles[k] = not st.session_state.obstacles[k]
+
         with st.container(key="obstacle_grid"):
             for row in keys:
                 cols = st.columns(3, gap="small")
@@ -2180,9 +2183,13 @@ elif page == "🎯 投擲データ記録":
                     else:
                         is_active = st.session_state.obstacles[key]
                         label = f"🚩 {labels[key]}" if is_active else labels[key]
-                        if cols[i].button(label, key=f"btn_{key}"):
-                            st.session_state.obstacles[key] = not st.session_state.obstacles[key]
-                            st.rerun()
+                        # on_clickはスクリプト本体が動き出す前（＝このlabel計算より前）
+                        # に処理されるので、明示的なst.rerun()を呼ばなくても
+                        # クリックした瞬間のこの1回の再実行だけでラベルが切り替わる。
+                        # st.rerun()を足すと、クリックで自然に起きる再実行に加えて
+                        # もう1回フルスクリプトが走ってしまい（ペア共有時は
+                        # DB問い合わせも倍になる）、反映が遅く感じる原因になっていた
+                        cols[i].button(label, key=f"btn_{key}", on_click=_toggle_obstacle, args=(key,))
 
     st.divider()
 
