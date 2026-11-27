@@ -2000,12 +2000,27 @@ elif page == "🎯 投擲データ記録":
             padding: 0px !important;
             font-size: 13px !important;
         }
+        .st-key-obstacle_grid {
+            /* ページ幅いっぱいに引き伸ばすと1マスが大きくなりすぎるため、
+               盤面らしいコンパクトな正方形グリッドに収まる幅で固定し中央寄せする */
+            max-width: 280px !important;
+            margin: 0 auto !important;
+        }
+        .st-key-obstacle_grid .stElementContainer {
+            /* StreamlitがこのdivにインラインでW: fit-contentを当てているため、
+               中のボタンがwidth:100%を指定しても、その親自体が38px程度の
+               自然サイズに縮んでしまい反映されなかった。ここを明示的に
+               広げないとマス目として隙間なく並ばない */
+            width: 100% !important;
+        }
         .st-key-obstacle_grid div.stButton > button {
             aspect-ratio: 1 / 1 !important;
             height: auto !important;
             width: 100% !important;
             font-size: 15px !important;
             font-weight: 800 !important;
+            border-radius: 0px !important;
+            margin: -1px !important;
         }
         .st-key-reset_btn_row div.stButton > button {
             width: 100% !important;
@@ -2028,8 +2043,8 @@ elif page == "🎯 投擲データ記録":
             display: flex !important;
             flex-direction: row !important;
             flex-wrap: nowrap !important;
-            gap: 10px !important;
-            margin-bottom: 10px !important;
+            gap: 0px !important;
+            margin-bottom: 0px !important;
         }
         .st-key-obstacle_grid div[data-testid="stHorizontalBlock"] > div {
             flex: 1 1 33.33% !important;
