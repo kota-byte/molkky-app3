@@ -1383,13 +1383,21 @@ if "experiment" not in st.session_state:
     st.session_state.experiment = (
         _load_experiment_state(st.session_state.current_player) or _default_experiment_state()
     )
+    # 直後の比較用に、読み込んだ（＝DBに保存済みの）時点のコピーを控えておく。
+    # dict(...)で複製しないとexperimentそのものへの参照になり、以降の
+    # ミューテーションがこちらにも伝播して比較が常に一致してしまう
+    st.session_state._experiment_last_saved = dict(st.session_state.experiment)
 if "pending_throw_snapshot" not in st.session_state:
     st.session_state.pending_throw_snapshot = {}
 
 # experimentは色々な場所で書き換えられるため、書き換え箇所ごとに保存を
-# 呼ぶのではなく、ここで毎回のスクリプト実行ごとに1回だけDBへ反映する
-# （st.rerun()の直前に限らず、どこで変更されても取りこぼさないため）
-_save_experiment_state(st.session_state.current_player, st.session_state.experiment)
+# 呼ぶのではなく、ここで毎回のスクリプト実行ごとに1回だけ確認する（st.rerun()の
+# 直前に限らず、どこで変更されても取りこぼさないため）。ただし実際に前回の
+# 保存内容と差分が無ければDBへは書きに行かない（無関係な操作でも毎回
+# 書き込みが走ってしまい重くなっていたため）
+if st.session_state.experiment != st.session_state._experiment_last_saved:
+    _save_experiment_state(st.session_state.current_player, st.session_state.experiment)
+    st.session_state._experiment_last_saved = dict(st.session_state.experiment)
 
 def _reset_experiment_session():
     """ユーザー切り替え時に評価実験の状態（記録中かどうかを含む）を引き継がないようにする。
