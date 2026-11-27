@@ -2020,7 +2020,11 @@ elif page == "🎯 投擲データ記録":
             font-size: 15px !important;
             font-weight: 800 !important;
             border-radius: 0px !important;
-            margin: -1px !important;
+            margin: 0px !important;
+            /* 隣のマスとの継ぎ目は、隙間なしに重ねて消すやり方（negative
+               margin）だとSafariで継ぎ目が隙間として見えてしまったため、
+               普通に枠線を引いて隣とくっつける方式に変更した */
+            border: 1px solid rgba(49, 51, 63, 0.2) !important;
         }
         .st-key-reset_btn_row div.stButton > button {
             width: 100% !important;
