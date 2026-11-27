@@ -2,7 +2,6 @@ import os
 import sys
 import json
 import base64
-import threading
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timezone, timedelta
@@ -167,31 +166,29 @@ def _gsheets_worksheet(sheet_name, columns):
         _gsheets_log_error(f"open worksheet {sheet_name}", e)
         return None
 
-def _append_row_background(ws, columns, row, context):
-    """1行をバックグラウンドスレッドで追記する。呼び出し元（「記録を保存する」
-    ボタンの処理）はGoogle Sheets APIへのネットワーク往復を待たずに続行できる。
-    元々この追記は失敗してもユーザーへは何も伝えていなかった（stderrへの
-    ログだけ）ため、非同期化しても気づきやすさが悪化するわけではない"""
-    def _task():
-        try:
-            ws.append_row([row.get(c, "") for c in columns], value_input_option="USER_ENTERED")
-        except Exception as e:
-            _gsheets_log_error(context, e)
-    threading.Thread(target=_task, daemon=True).start()
-
 def append_throw_log(row: dict):
-    """1投擲分のデータをGoogle Sheetsのthrow_logsシートに追記する"""
+    """1投擲分のデータをGoogle Sheetsのthrow_logsシートに追記する。
+    以前はこの書き込みをバックグラウンドスレッドに逃がして保存ボタンの
+    応答を速くしていたが、スレッドが完了する前にアプリが再起動（デプロイの
+    度に起きる）すると、そのまま書き込みが失われる実害が確認されたため、
+    研究データの確実性を優先して同期処理に戻した"""
     ws = _gsheets_worksheet("throw_logs", THROW_LOG_COLUMNS)
     if ws is None:
         return
-    _append_row_background(ws, THROW_LOG_COLUMNS, row, "append throw_logs row")
+    try:
+        ws.append_row([row.get(c, "") for c in THROW_LOG_COLUMNS], value_input_option="USER_ENTERED")
+    except Exception as e:
+        _gsheets_log_error("append throw_logs row", e)
 
 def append_match_log(row: dict):
     """1試合分のデータをGoogle Sheetsのmatch_logsシートに追記する"""
     ws = _gsheets_worksheet("match_logs", MATCH_LOG_COLUMNS)
     if ws is None:
         return
-    _append_row_background(ws, MATCH_LOG_COLUMNS, row, "append match_logs row")
+    try:
+        ws.append_row([row.get(c, "") for c in MATCH_LOG_COLUMNS], value_input_option="USER_ENTERED")
+    except Exception as e:
+        _gsheets_log_error("append match_logs row", e)
 
 def append_skittle_snapshot(row: dict):
     """評価実験画面の「配置を記録する」ボタンから、今の配置をskittle_snapshotsシートに追記する
@@ -215,7 +212,10 @@ def append_skittle_save_snapshot(row: dict):
     ws = _gsheets_worksheet("skittle_save_snapshots", SKITTLE_SAVE_SNAPSHOT_COLUMNS)
     if ws is None:
         return
-    _append_row_background(ws, SKITTLE_SAVE_SNAPSHOT_COLUMNS, row, "append skittle_save_snapshots row")
+    try:
+        ws.append_row([row.get(c, "") for c in SKITTLE_SAVE_SNAPSHOT_COLUMNS], value_input_option="USER_ENTERED")
+    except Exception as e:
+        _gsheets_log_error("append skittle_save_snapshots row", e)
 
 import math
 import random
