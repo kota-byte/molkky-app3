@@ -2773,13 +2773,16 @@ else:
         # 先手を明示的に選んでもらい、その場で「今の番」を確定させる。
         # 未確定のまま始めると、1投目を評価する手段（シミュレーター画面での
         # 計算）を使わない運用の場合、1投目だけ保留が効かず障害物判定に
-        # 投げた後の配置が混ざってしまう問題があったため
-        _first_player = st.radio(
-            "先手（最初に投げる人）",
-            [st.session_state.current_player, _partner_for_start],
+        # 投げた後の配置が混ざってしまう問題があったため。
+        # 相手の名前と自分の名前を見比べて選ぶより、自分が先手か後手かを
+        # 直接選ぶ方が分かりやすいので、ラベルは「先手／後手」にする
+        _turn_order = st.radio(
+            "自分は先手・後手どちら？",
+            ["先手", "後手"],
             horizontal=True,
             key=f"exp_first_player_radio_{exp['match_number']}",
         )
+        _first_player = st.session_state.current_player if _turn_order == "先手" else _partner_for_start
 
     if not exp["recording"]:
         if st.button("▶️ スタート", type="primary", use_container_width=True):
